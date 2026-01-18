@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Linux C Cloud Disk Pro</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 950px; margin: 20px auto; background-color: #f4f6f9; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        input, button { padding: 8px 12px; margin: 5px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; outline: none; transition: border 0.2s; }
+        input:focus { border-color: #2196F3; }
+        button { cursor: pointer; border: none; color: white; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        button:active { transform: translateY(1px); box-shadow: none; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 4px; overflow: hidden; }
+        th, td { border-bottom:1px solid #eee; padding: 12px; text-align: left; }
+        th { background-color: #333; color: white; font-weight: 600; }
+        tr:nth-child(even) { background-color: #fafafa; }
+        tr:hover { background-color: #f0f7ff; }
+        .folder { color: #FF9800; font-weight: bold; cursor: pointer; }
+        .status { color: #4CAF50; font-size: 0.9em; }
+        h2 { margin-top: 0; border-bottom: 2px solid #ddd; padding-bottom: 10px; color: #333; }
+        
+        /* 任务列表样式 */
+        .upload-section { margin-top: 20px; background: white; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
+        .progress-container { background: #e0e0e0; height: 18px; width: 100%; border-radius: 9px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #4CAF50, #81C784); transition: width 0.2s; text-align: center; color: white; font-size: 11px; line-height: 18px; font-weight: bold; }
+        .btn-action { cursor: pointer; padding:4px 10px; font-size: 12px; border-radius: 3px; border: none; color: white; width: 65px; box-shadow: none; margin-right: 5px;}
+        .btn-pause { background: #FF9800; }
+        .btn-resume { background: #2196F3; }
+        .btn-delete { background: #f44336; }
+        .btn-retry { background: #607D8B; }
+        .task-table th { background-color: #555; font-size: 13px; padding: 8px; }
+        .task-table td { padding: 8px; font-size: 12px; vertical-align: middle; }
+        .op-btn { margin-right: 5px; font-size: 12px; padding: 5px 10px; }
+
+        /* 移动文件 模态框样式 (简单下拉选择版) */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; /* 提高 z-index */
+        }
+        .modal-content {
+            background: white; padding: 25px; border-radius: 8px; width: 500px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom:1px solid #eee; padding-bottom: 10px; }
+        .modal-title { font-size: 18px; font-weight: bold; }
+        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; box-shadow: none; line-height: 1;}
+        .close-btn:hover { color: #333; box-shadow: none; }
+
+        /* 下拉选择框样式 */
+        select { 
+            width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; 
+            background-color: white; outline: none; margin-bottom: 20px;
+        }
+
+        /* =========================================================== */
+        /* 【修复关键】将 .hidden 放到最后，并加 !important 确保生效 */
+        .hidden { display: none !important; }
+        /* =========================================================== */
+    </style>
+    <!-- 引入 SparkMD5 用于计算秒传 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
+</head>
+<body>
+
+    <!-- 登录界面 -->
+    <div id="login-view" class="hidden" style="max-width: 400px; margin: 80px auto; padding: 40px; background: white; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center;">
+        <h2 style="border:none; margin-bottom: 30px; color: #333;">网盘系统</h2>
+        <div style="margin-bottom: 20px;">
+            <input type="text" id="login-user" placeholder="用户名" style="width: 90%; display: block; margin: 0 auto;">
+        </div>
+        <div style="margin-bottom: 30px;">
+            <input type="password" id="login-pass" placeholder="密码" style="width: 90%; display: block; margin: 0 auto;">
+        </div>
+        <div>
+            <button onclick="doLogin()" style="width: 45%; background-color: #2196F3;">登录</button>
+            <button onclick="doRegister()" style="width: 45%; background-color: #4CAF50;">注册</button>
+        </div>
+        <p id="login-msg" class="status" style="text-align: center; margin-top: 20px; color: #f44336;"></p>
+    </div>
+
+    <!-- 主界面 -->
+    <div id="main-view" class="hidden">
+        <h2>我的云盘</h2>
+        
+        <!-- 面包屑导航 -->
+        <div style="background: white; padding: 15px; margin-bottom: 20px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+            <div style="font-weight: 500; color: #333;">
+                <span>当前路径: </span>
+                <span id="current-path" style="color: #2196F3; font-weight: bold;">Root</span>
+            </div>
+            <div>
+                <button onclick="doLogout()" style="background-color: #f44336; font-size: 13px;">退出</button>
+                <button onclick="goBack()" style="background-color: #607D8B; font-size: 13px;">返回上级</button>
+            </div>
+        </div>
+        
+        <!-- 操作区 -->
+        <div class="upload-section">
+            <div style="margin-bottom: 15px;">
+                <input type="text" id="new-folder-name" placeholder="新建文件夹名称" style="width: 65%;">
+                <button onclick="doMkdir()" style="background-color: #009688;">新建文件夹</button>
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            
+            <div style="display: flex; align-items: center; background: #f9f9f9; padding: 10px; border-radius: 4px;">
+                <input type="file" id="file-input" multiple onchange="handleFileSelect(event)" style="border: 1px solid #ddd;">
+                <span style="margin-left: 15px; font-size: 13px; color: #666;">提示：支持多选并发上传</span>
+            </div>
+
+            <!-- 任务列表 -->
+            <h4 style="margin-top: 20px; margin-bottom: 10px; border-left: 4px solid #2196F3; padding-left: 10px;">上传任务列表</h4>
+            <table id="upload-task-list" class="task-table">
+                <thead>
+                    <tr>
+                        <th style="width: 30%;">文件名</th>
+                        <th style="width: 10%;">大小</th>
+                        <th style="width: 35%;">进度</th>
+                        <th style="width: 10%;">状态</th>
+                        <th style="width: 15%;">操作</th>
+                    </tr>
+                </thead>
+                <tbody id="upload-tbody">
+                    <!-- 动态生成任务 -->
+                </tbody>
+            </table>
+        </div>
+
+        <!-- 文件列表 -->
+        <h3 style="margin-top: 30px; border-left: 4px solid #4CAF50; padding-left: 10px; border-bottom: 1px solid #ddd; padding-bottom: 10px;">文件浏览</h3>
+        <table id="file-list">
+            <thead>
+                <tr>
+                    <th>名称 (悬停查看ID)</th>
+                    <th>大小</th>
+                    <th>类型</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody id="file-tbody">
+                <!-- 文件列表动态生成 -->
+            </tbody>
+        </table>
+    </div>
+
+    <!-- 移动文件 模态框 (简单下拉选择版) -->
+    <div id="move-modal" class="hidden modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <span class="modal-title">选择目标文件夹</span>
+                <button class="close-btn" onclick="closeMoveModal()">×</button>
+            </div>
+            
+            <div style="margin-bottom: 15px;">
+                <p style="font-size: 13px; color: #666; margin-top: 0;">请在下拉列表中选择目标位置：</p>
+                <select id="move-folder-select">
+                    <option value="0" selected>📂 根目录</option>
+                    <!-- JS 会动态填充其他文件夹到这里 -->
+                </select>
+            </div>
+
+            <div style="text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
+                <button onclick="closeMoveModal()" style="background-color: #999;">取消</button>
+                <button onclick="confirmMove()" style="background-color: #2196F3;">确认移动</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 配置
+        const CHUNK_SIZE =5 * 1024 * 1024; // 5MB 分片
+        const API_BASE = 'http://127.0.0.1:8080';
+        let token = localStorage.getItem('token');
+        let currentParentId = 0;
+        let pathStack = [{id: 0, name: 'Root'}];
+        let fileToMoveId = null;
+
+        // ---------------------------------------------------------
+        // 任务管理器核心类
+        // ---------------------------------------------------------
+        class UploadTask {
+            constructor(file, onComplete, onError) {
+                this.file = file;
+                this.status = 'PENDING'; 
+                this.progress = 0; 
+                this.offset = 0;
+                this.md5 = null;
+                this.controller = null; 
+                this.onComplete = onComplete;
+                this.onError = onError;
+                this.fileSafeId = file.name.replace(/\W/g,'_'); 
+            }
+
+            async start() {
+                if (this.status === 'UPLOADING' || this.status === 'FINISHED') return;
+                
+                this.status = 'UPLOADING';
+                this.controller = new AbortController();
+                this.updateUI();
+
+                try {
+                    this.md5 = await this.calcMD5();
+                    const checkRes = await this.checkUpload(this.md5);
+                    
+                    if (checkRes.status === 'instant') {
+                        this.finish();
+                        return;
+                    }
+
+                    this.offset = checkRes.offset || 0;
+                    const totalSize = this.file.size;
+
+                    while (this.offset < totalSize && this.status === 'UPLOADING') {
+                        const end = Math.min(this.offset + CHUNK_SIZE, totalSize);
+                        const chunk = this.file.slice(this.offset, end);
+                        await this.uploadChunk(this.md5, this.offset, chunk);
+                        this.offset = end;
+                        this.progress = Math.floor((this.offset / totalSize) * 100);
+                        this.updateUI();
+                    }
+
+                    if (this.status === 'UPLOADING') {
+                        await this.completeUpload(this.md5);
+                        this.finish();
+                    }
+
+                } catch (error) {
+                    if (error.name === 'AbortError') {
+                        this.status = 'PAUSED'; 
+                    } else {
+                        console.error(error);
+                        this.status = 'ERROR';
+                        this.onError(this);
+                    }
+                    this.updateUI();
+                }
+            }
+
+            pause() {
+                if (this.status === 'UPLOADING' && this.controller) {
+                    this.controller.abort();
+                    this.status = 'PAUSED';
+                    this.updateUI();
+                }
+            }
+
+            async calcMD5() {
+                return new Promise((resolve) => {
+                    const spark = new SparkMD5.ArrayBuffer();
+                    const reader = new FileReader();
+                    let currentChunk = 0;
+                    const readChunkSize = 2 * 1024 * 1024; 
+                    const chunks = Math.ceil(this.file.size / readChunkSize);
+                    
+                    const loadNext = () => {
+                        const start = currentChunk * readChunkSize;
+                        const end = Math.min(start + readChunkSize, this.file.size);
+                        reader.readAsArrayBuffer(this.file.slice(start, end));
+                    };
+
+                    reader.onload = e => {
+                        spark.append(e.target.result);
+                        currentChunk++;
+                        if (currentChunk < chunks) {
+                            setTimeout(loadNext, 0); 
+                        } else {
+                            resolve(spark.end());
+                        }
+                    };
+                    loadNext();
+                });
+            }
+
+            async checkUpload(md5) {
+                const res = await api('/api/files/upload/check', {
+                    md5: md5,
+                    file_size: this.file.size,
+                    file_name: this.file.name,
+                    parent_id: currentParentId
+                });
+                
+                const data = res.data;
+                if (data.status === 'instant') {
+                    this.status = 'FINISHED';
+                    this.progress = 100;
+                    this.updateUI();
+                    this.onComplete(this);
+                    return { status: 'instant' };
+                }
+                return { status: data.status, offset: data.offset };
+            }
+
+            async uploadChunk(md5, offset, chunk) {
+                const url = `${API_BASE}/api/files/upload/chunk?md5=${md5}&offset=${offset}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Token': token },
+                    body: chunk,
+                    signal: this.controller.signal
+                });
+                if (!response.ok) throw new Error('Upload failed');
+            }
+
+            async completeUpload(md5) {
+                await api('/api/files/upload/complete', {
+                    md5: md5,
+                    file_name: this.file.name,
+                    parent_id: currentParentId
+                });
+            }
+
+            finish() {
+                this.status = 'FINISHED';
+                this.progress = 100;
+                this.updateUI();
+                this.onComplete(this);
+            }
+
+            updateUI() {
+                const row = document.getElementById(`task-${this.fileSafeId}`);
+                if (!row) return;
+
+                const progressBar = row.querySelector('.progress-bar');
+                const statusText = row.querySelector('.status-text');
+                const btnAction = row.querySelector('.btn-action');
+
+                progressBar.style.width = `${this.progress}%`;
+                progressBar.innerText = this.progress < 10 ? '' : `${this.progress}%`;
+                
+                if (this.status === 'UPLOADING') {
+                    statusText.innerText = '上传中';
+                    btnAction.innerText = '暂停';
+                    btnAction.onclick = () => this.pause();
+                    btnAction.className = 'btn-action btn-pause';
+                } else if (this.status === 'PAUSED') {
+                    statusText.innerText = `暂停 (${(this.offset/1024/1024).toFixed(1)}MB)`;
+                    btnAction.innerText = '继续';
+                    btnAction.onclick = () => this.start();
+                    btnAction.className = 'btn-action btn-resume';
+                } else if (this.status === 'FINISHED') {
+                    statusText.innerText = '完成';
+                    row.remove();
+                   // btnAction.innerText = 'X';
+                   // btnAction.className = 'btn-action btn-delete';
+                    // btnAction.onclick = () => row.remove();
+                } else if (this.status === 'ERROR') {
+                    statusText.innerText = '失败';
+                    btnAction.innerText = '重试';
+                    btnAction.onclick = () => this.start();
+                    btnAction.className = 'btn-action btn-retry';
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 基础 API 功能
+        // ---------------------------------------------------------
+        
+        const uploadTasks = [];
+
+        if (token) {
+            showMain();
+            loadFiles();
+        } else {
+            document.getElementById('login-view').classList.remove('hidden');
+        }
+
+        async function api(url, data) {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (token) headers['Token'] = token;
+
+            try {
+                const res = await fetch(API_BASE + url, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(data)
+                });
+                return await res.json();
+            } catch (e) {
+                console.error(e);
+                return { code: -1, msg: e.message };
+            }
+        }
+
+        function showMain() {
+            document.getElementById('login-view').classList.add('hidden');
+            document.getElementById('main-view').classList.remove('hidden');
+        }
+
+        async function doLogin() {
+            const u = document.getElementById('login-user').value;
+            const p = document.getElementById('login-pass').value;
+            const res = await api('/api/user/login', { username: u, password: p });
+            if (res.code === 0) {
+                token = res.data.token;
+                localStorage.setItem('token', token);
+                showMain();
+                loadFiles();
+            } else {
+                document.getElementById('login-msg').innerText = res.msg;
+            }
+        }
+
+        async function doRegister() {
+            const u = document.getElementById('login-user').value;
+            const p = document.getElementById('login-pass').value;
+            const res = await api('/api/user/register', { username: u, password: p });
+            alert(res.msg);
+            if (res.code === 0) alert('注册成功，请登录');
+        }
+
+        async function doLogout() {
+            localStorage.removeItem('token');
+            location.reload();
+        }
+
+        async function loadFiles() {
+            const res = await api('/api/files/list', { parent_id: currentParentId });
+            const tbody = document.getElementById('file-tbody');
+            tbody.innerHTML = '';
+            
+            if (res.code === 0) {
+                res.data.forEach(f => {
+                    const tr = document.createElement('tr');
+                    const isFolder = f.file_type ===1;
+                    
+                    let sizeStr = f.file_size + ' B';
+                    if(f.file_size > 1024*1024) sizeStr = (f.file_size/1024/1024).toFixed(2) + ' MB';
+                    else if(f.file_size > 1024) sizeStr = (f.file_size/1024).toFixed(2) + ' KB';
+
+                    tr.innerHTML = `
+                        <td class="${isFolder ? 'folder' : ''}" 
+                            title="ID: ${f.file_id}"
+                            onclick="${isFolder ? `enterFolder(${f.file_id},'${f.file_name}')` : ''}">
+                            ${isFolder ? '[DIR] ' : ''}${f.file_name}
+                        </td>
+                        <td>${sizeStr}</td>
+                        <td>${isFolder ? '文件夹' : '文件'}</td>
+                        <td>
+                            ${!isFolder ? `<button onclick="downloadFile(${f.file_id}, '${f.file_name}')" class="op-btn" style="background-color: #4CAF50;">下载</button>` : ''}
+                            <button onclick="doRename(${f.file_id}, '${f.file_name}')" class="op-btn" style="background-color: #FF9800;">改名</button>
+                            <button onclick="openMoveModal(${f.file_id})" class="op-btn" style="background-color: #2196F3;">移动</button>
+                            <button onclick="doDelete(${f.file_id})" class="op-btn" style="background-color: #f44336;">删除</button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        function enterFolder(id, name) {
+            pathStack.push({id: id, name: name});
+            currentParentId = id;
+            updatePath();
+            loadFiles();
+        }
+
+        function goBack() {
+            if (pathStack.length > 1) {
+                pathStack.pop();
+                currentParentId = pathStack[pathStack.length-1].id;
+                updatePath();
+                loadFiles();
+            }
+        }
+
+        function updatePath() {
+            const path = pathStack.map(p => p.name).join(' / ');
+            document.getElementById('current-path').innerText = path;
+        }
+
+        async function doMkdir() {
+            const name = document.getElementById('new-folder-name').value;
+            if (!name) return;
+            const res = await api('/api/files/mkdir', { parent_id: currentParentId, folder_name: name });
+            alert(res.msg);
+            if (res.code === 0) {
+                document.getElementById('new-folder-name').value = '';
+                loadFiles();
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 文件操作逻辑 (改名/移动/删除)
+        // ---------------------------------------------------------
+
+        async function doRename(fileId, oldName) {
+            const newName = prompt("请输入新名称:", oldName);
+            if (!newName || newName === oldName) return;
+
+            const res = await api('/api/files/rename', { file_id: fileId, new_name: newName });
+            alert(res.msg);
+            if (res.code === 0) loadFiles();
+        }
+
+        async function doDelete(fileId) {
+            if (!confirm("确定要删除吗？如果是文件夹，必须为空才能删除。")) return;
+
+            const res = await api('/api/files/delete', { file_id: fileId });
+            alert(res.msg);
+            if (res.code === 0) loadFiles();
+        }
+
+        async function downloadFile(id, name) {
+            const headers = { 'Token': token, 'Content-Type': 'application/json' };
+            const res = await fetch(API_BASE + '/api/files/download', {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({ file_id: id })
+            });
+
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = name;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            } else {
+                alert("下载失败: " + res.statusText);
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 文件移动逻辑 (下拉列表版 - 最终修复版)
+        // ---------------------------------------------------------
+
+        async function openMoveModal(fileId) {
+            fileToMoveId = fileId;
+            // 【关键】先移除 hidden 类，显示弹窗
+            const modal = document.getElementById('move-modal');
+            modal.classList.remove('hidden');
+
+            // 重置 Select 内容
+            const select = document.getElementById('move-folder-select');
+            select.innerHTML = '<option value="0" selected>📂 根目录</option>';
+
+            // 异步加载其他文件夹
+            try {
+                const res = await api('/api/files/list', { fetch_all: 1 });
+                if (res.code !== 0) {
+                    alert('加载目录失败');
+                    closeMoveModal();
+                    return;
+                }
+
+                // 遍历所有数据，只添加文件夹
+                res.data.forEach(node => {
+                    if (node.file_type === 1) {
+                        const option = document.createElement('option');
+                        option.value = node.file_id;
+                        option.text = `📁 ${node.file_name} (ID:${node.file_id})`;
+                        select.appendChild(option);
+                    }
+                });
+
+            } catch (error) {
+                console.error(error);
+                alert('加载出错，请确保后端已重启');
+                closeMoveModal();
+            }
+        }
+
+        function closeMoveModal() {
+            // 【关键】添加 hidden 类，强制隐藏
+            document.getElementById('move-modal').classList.add('hidden');
+            fileToMoveId = null;
+        }
+
+        async function confirmMove() {
+            const select = document.getElementById('move-folder-select');
+            const targetId = parseInt(select.value);
+
+            if (!fileToMoveId) return;
+            
+            const res = await api('/api/files/move', { file_id: fileToMoveId, target_parent_id: targetId });
+            alert(res.msg);
+            
+            // 无论成功失败，都关闭弹窗
+            closeMoveModal();
+            
+            if (res.code === 0) {
+                loadFiles();
+            }
+        }
+
+        // ---------------------------------------------------------
+        // 多文件上传逻辑
+        // ---------------------------------------------------------
+
+        function handleFileSelect(event) {
+            const files = Array.from(event.target.files);
+            const tbody = document.getElementById('upload-tbody');
+            
+            files.forEach(file => {
+                const existingTask = uploadTasks.find(t => t.file.name === file.name && t.file.size === file.size);
+                if (existingTask) return; 
+
+                const tr = document.createElement('tr');
+                tr.id = `task-${file.name.replace(/\W/g,'_')}`;
+                tr.innerHTML = `
+                    <td>${file.name}</td>
+                    <td>${(file.size/1024/1024).toFixed(1)} MB</td>
+                    <td>
+                        <div class="progress-container">
+                            <div class="progress-bar" style="width: 0%">0%</div>
+                        </div>
+                    </td>
+                    <td class="status-text">等待中</td>
+                    <td><button class="btn-action">等待</button></td>
+                `;
+                tbody.appendChild(tr);
+
+                const task = new UploadTask(file, () => {
+                    loadFiles();
+                }, (errTask) => {
+                });
+                uploadTasks.push(task);
+
+                task.start();
+            });
+            
+            event.target.value = '';
+        }
+    </script>
+</body>
+</html>
