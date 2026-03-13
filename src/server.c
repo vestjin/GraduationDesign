@@ -17,6 +17,7 @@
 
 #define MAX_EVENTS 256
 #define BUFFER_SIZE (7 * 1024 * 1024) // 2MB 缓冲区
+#define MAX_POOL_SIZE 100 // 全局缓冲池
 
 // 全局变量
 extern Config g_conf;
@@ -46,8 +47,21 @@ static int set_socket_timeout(int sockfd) {
 void process_client_request(void *arg) {
     int client_fd = *(int*)arg;
     free(arg); 
+    // ========== 1. 变量声明区（必须全部在函数开头） ==========
+    char *buffer = NULL;           // 接收缓冲区
+    DBConnection *db = NULL;       // 数据库连接（初始化为NULL）
+    HttpRequest req;               // HTTP请求结构体
+    cJSON *req_json = NULL;        // 解析后的JSON对象
+    int total_read = 0;            // 已读取字节数
+    int content_length = 0;        // Content-Length
+    int header_found = 0;          // 是否找到header结束标记
+    int header_len = 0;            // header长度
+    int flags = 0;                 // socket标志
+    // 初始化关键结构体
+    memset(&req, 0, sizeof(req)); // 关键：清零结构体，避免垃圾数据干扰解析
+    
     // 1. 分配内存 (减小了 Size)
-    char *buffer = malloc(BUFFER_SIZE);
+    buffer = malloc(BUFFER_SIZE);
     if (!buffer) {
         printf("MALLOC FAILED!\n"); // 打印日志排查
         close(client_fd);
@@ -55,19 +69,12 @@ void process_client_request(void *arg) {
     }
     // 【关键】增加超时设置
     if (set_socket_timeout(client_fd) < 0) {
-        free(buffer);
-        close(client_fd);
-        return;
+        goto cleanup;
     }
 
     // 2. 设置阻塞模式
-    int flags = fcntl(client_fd, F_GETFL, 0);
+    flags = fcntl(client_fd, F_GETFL, 0);
     fcntl(client_fd, F_SETFL, flags & ~O_NONBLOCK);
-
-    int total_read = 0;
-    int content_length = 0;
-    int header_found = 0;
-    int header_len = 0;
 
     // 3. 循环读取 Header
     while (total_read < BUFFER_SIZE - 1) {
@@ -131,22 +138,16 @@ void process_client_request(void *arg) {
         goto cleanup;
     }
 
-    // 【关键修改】获取数据库连接
-    // 阻塞等待，直到池中有可用连接
-    DBConnection *db = db_pool_acquire(g_db_pool);
+    // 【关键修复】获取数据库连接：改为从连接池获取，且不再持有全局锁
+    db = db_pool_acquire(g_db_pool);
     if (!db) {
         fprintf(stderr, "Failed to acquire DB connection.\n");
-        close(client_fd);
-        return; // 或者发送 503 错误
+        const char *err503 = "HTTP/1.1 503 Service Unavailable\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n";
+        send(client_fd, err503, strlen(err503), 0);
+        goto cleanup;
     }
 
-    // 5. 解析 HTTP
-    HttpRequest req; // 隐患 - 未初始化
-    memset(&req, 0, sizeof(req)); // 关键：清零结构体，避免垃圾数据干扰解析
-
-    cJSON *req_json = NULL; // 解析后的 JSON 对象
-
-    fcntl(client_fd, F_SETFL, flags & ~O_NONBLOCK);
+    // 5. 解析 HTTP 请求
 
     if (parse_http_request(buffer, total_read, &req) != 0) {
         const char *bad_resp = "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n";
@@ -263,24 +264,26 @@ void process_client_request(void *arg) {
         goto cleanup; // 清理资源
     }
 
-    char *json_body = cJSON_PrintUnformatted(json_resp_obj); 
-    cJSON_Delete(json_resp_obj); 
+    if(json_resp_obj) {
+        char *json_body = cJSON_PrintUnformatted(json_resp_obj); 
+        cJSON_Delete(json_resp_obj); 
 
-    if (json_body) {
-        char header[512];
-        int body_len = strlen(json_body);
-        snprintf(header, sizeof(header), 
-                 "HTTP/1.1 200 OK\r\n"
-                 "Content-Type: application/json\r\n"
-                 "Content-Length: %d\r\n"
-                 "Access-Control-Allow-Origin: *\r\n"
-                 "Access-Control-Allow-Headers: Content-Type, Token\r\n"
-                 "Connection: close\r\n"
-                 "\r\n", body_len);
-        
-        send(client_fd, header, strlen(header), 0);
-        send(client_fd, json_body, body_len, 0);
-        free(json_body);
+        if (json_body) {
+            char header[512];
+            int body_len = strlen(json_body);
+            snprintf(header, sizeof(header), 
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: application/json\r\n"
+                    "Content-Length: %d\r\n"
+                    "Access-Control-Allow-Origin: *\r\n"
+                    "Access-Control-Allow-Headers: Content-Type, Token\r\n"
+                    "Connection: close\r\n"
+                    "\r\n", body_len);
+            
+            send(client_fd, header, strlen(header), 0);
+            send(client_fd, json_body, body_len, 0);
+            free(json_body);
+        }
     }
 
     // 9. 统一清理标签

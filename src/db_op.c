@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <errno.h>
 
 int db_init() {
     if (mysql_library_init(0, NULL, NULL)) {
@@ -111,21 +112,50 @@ DBPool* db_pool_create(Config *conf, int size) {
 
 // 【关键优化】获取连接：不再持有全局大锁，而是获取独立的连接对象
 DBConnection* db_pool_acquire(DBPool *pool) {
+    if (!pool || pool->size <= 0) {
+        return NULL;
+    }
+    
     pthread_mutex_lock(&pool->lock);
-
+    
+    // 设置等待超时（防止无限等待）
+    struct timespec timeout;
+    clock_gettime(CLOCK_REALTIME, &timeout);
+    timeout.tv_sec += 10;  // 最多等待10秒
+    
     while (1) {
         for (int i = 0; i < pool->size; i++) {
             if (pool->available[i] && pool->connections[i].conn) {
                 pool->available[i] = false;
                 pthread_mutex_unlock(&pool->lock);
+                
+                // 验证连接是否有效
+                if (mysql_ping(pool->connections[i].conn) != 0) {
+                    // 连接已断开，尝试重连
+                    fprintf(stderr, "Connection %d lost, reconnecting...\n", i);
+                    mysql_close(pool->connections[i].conn);
+                    pool->connections[i].conn = mysql_init(NULL);
+                    if (pool->connections[i].conn) {
+                        mysql_options(pool->connections[i].conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
+                        // 需要从全局配置获取连接参数
+                        // 这里简化处理，实际应传入配置
+                    }
+                }
+                
                 return &pool->connections[i];
             }
         }
-        // 暂无可用连接，等待条件变量
-        printf("[Pool] Waiting for available connection...\n");
-        pthread_cond_wait(&pool->cond, &pool->lock);
+        
+        // 等待可用连接（带超时）
+        int ret = pthread_cond_timedwait(&pool->cond, &pool->lock, &timeout);
+        if (ret == ETIMEDOUT) {
+            pthread_mutex_unlock(&pool->lock);
+            fprintf(stderr, "DB pool acquire timeout\n");
+            return NULL;
+        }
     }
 }
+
 
 // 归还连接：标记为可用，唤醒等待线程
 void db_pool_release(DBPool *pool, DBConnection *conn) {

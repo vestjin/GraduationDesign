@@ -40,24 +40,37 @@ long verify_user_token(DBConnection *db, const char *token) {
     return uid;
 }
 
-// 辅助：从 URL 中解析参数
+// 线程安全的URL参数解析函数
 void get_url_param(const char *url, const char *key, char *output) {
     const char *start = strchr(url, '?');
-    if (!start) { output[0] = 0; return; }
+    if (!start) { 
+        output[0] = 0; 
+        return; 
+    }
     start++; 
     
-    char query[512]; 
-    strncpy(query, start, sizeof(query));
-    query[sizeof(query)-1] = 0;
+    char query[512];
+    strncpy(query, start, sizeof(query) - 1);
+    query[sizeof(query) - 1] = '\0';  // 确保终止符
     
-    char *token = strtok(query, "&");
+    // 使用线程安全的 strtok_r
+    char *saveptr = NULL;
+    char *token = strtok_r(query, "&", &saveptr);
+    
     while (token) {
         size_t key_len = strlen(key);
         if (strncmp(token, key, key_len) == 0 && token[key_len] == '=') {
-            strcpy(output, token + key_len + 1);
+            // 安全拷贝，防止溢出
+            size_t value_len = strlen(token + key_len + 1);
+            if (value_len < 128) {  // 假设output缓冲区大小
+                strncpy(output, token + key_len + 1, 127);
+                output[127] = '\0';
+            } else {
+                output[0] = 0;  // 值过长，返回空
+            }
             return;
         }
-        token = strtok(NULL, "&");
+        token = strtok_r(NULL, "&", &saveptr);
     }
     output[0] = 0;
 }
