@@ -41,40 +41,38 @@ long verify_user_token(DBConnection *db, const char *token) {
 }
 
 // 线程安全的URL参数解析函数
-void get_url_param(const char *url, const char *key, char *output) {
-    const char *start = strchr(url, '?');
-    if (!start) { 
-        output[0] = 0; 
-        return; 
-    }
-    start++; 
-    
-    char query[512];
-    strncpy(query, start, sizeof(query) - 1);
-    query[sizeof(query) - 1] = '\0';  // 确保终止符
-    
-    // 使用线程安全的 strtok_r
-    char *saveptr = NULL;
-    char *token = strtok_r(query, "&", &saveptr);
-    
-    while (token) {
-        size_t key_len = strlen(key);
-        if (strncmp(token, key, key_len) == 0 && token[key_len] == '=') {
-            // 安全拷贝，防止溢出
-            size_t value_len = strlen(token + key_len + 1);
-            if (value_len < 128) {  // 假设output缓冲区大小
-                strncpy(output, token + key_len + 1, 127);
-                output[127] = '\0';
-            } else {
-                output[0] = 0;  // 值过长，返回空
-            }
-            return;
-        }
-        token = strtok_r(NULL, "&", &saveptr);
-    }
-    output[0] = 0;
-}
+void get_url_param(const char *url,const char *key,char *out)
+{
+    out[0] = '\0';
 
+    const char *q = strchr(url,'?');
+    if(!q) return;
+
+    q++;
+
+    char query[512];
+    snprintf(query,sizeof(query),"%s",q);
+
+    char *saveptr;
+    char *token = strtok_r(query,"&",&saveptr);
+
+    while(token)
+    {
+        char *eq = strchr(token,'=');
+        if(eq)
+        {
+            *eq = '\0';
+
+            if(strcmp(token,key)==0)
+            {
+                strcpy(out,eq+1);
+                return;
+            }
+        }
+
+        token = strtok_r(NULL,"&",&saveptr);
+    }
+}
 // 【新增】辅助函数：根据文件名获取 MIME 类型
 static const char* get_mime_type(const char *filename) {
     const char *ext = strrchr(filename, '.');
@@ -511,7 +509,6 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
                  (long)new_total_offset, user_id, md5);
         db_execute_update(db, sql);
     }
-    // pthread_mutex_unlock(db_lock);
 
     const char *ok = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
     send(client_fd, ok, strlen(ok), 0);

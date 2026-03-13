@@ -73,6 +73,7 @@ DBPool* db_pool_create(Config *conf, int size) {
     pool->connections = (DBConnection*)malloc(sizeof(DBConnection) * size);
     pool->available = (bool*)malloc(sizeof(bool) * size);
     pool->size = size;
+    pool->conf = conf; // 保存配置以便重连使用
 
     if (!pool->connections || !pool->available) {
         free(pool->connections);
@@ -118,36 +119,65 @@ DBConnection* db_pool_acquire(DBPool *pool) {
     
     pthread_mutex_lock(&pool->lock);
     
-    // 设置等待超时（防止无限等待）
-    struct timespec timeout;
-    clock_gettime(CLOCK_REALTIME, &timeout);
-    timeout.tv_sec += 10;  // 最多等待10秒
+    // 【修复1】超时计算移至锁内（循环外），确保从“开始等待”时刻计算，避免锁竞争导致的误差
+    struct timespec abs_timeout;
+    clock_gettime(CLOCK_REALTIME, &abs_timeout);
+    abs_timeout.tv_sec += 10;  // 设置绝对超时时间点（当前时间 + 10秒）
     
     while (1) {
+        // 遍历寻找可用连接
         for (int i = 0; i < pool->size; i++) {
-            if (pool->available[i] && pool->connections[i].conn) {
+            if (pool->available[i]) {
+                // 如果 conn 为空，说明上次创建或重连失败，跳过
+                if (!pool->connections[i].conn) {
+                    continue;
+                }
+
                 pool->available[i] = false;
+                // 找到可用连接，暂时解锁（MySQL操作耗时应尽量在锁外）
                 pthread_mutex_unlock(&pool->lock);
                 
                 // 验证连接是否有效
                 if (mysql_ping(pool->connections[i].conn) != 0) {
-                    // 连接已断开，尝试重连
-                    fprintf(stderr, "Connection %d lost, reconnecting...\n", i);
+                    // 连接断开，尝试重连
+                    fprintf(stderr, "Connection %d lost, attempting reconnect...\n", i);
                     mysql_close(pool->connections[i].conn);
+                    
                     pool->connections[i].conn = mysql_init(NULL);
                     if (pool->connections[i].conn) {
                         mysql_options(pool->connections[i].conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
-                        // 需要从全局配置获取连接参数
-                        // 这里简化处理，实际应传入配置
+                        
+                        // 【修复2】真正执行数据库连接，使用保存的配置 pool->conf
+                        if (!mysql_real_connect(pool->connections[i].conn, 
+                                                pool->conf->db_host, 
+                                                pool->conf->db_user, 
+                                                pool->conf->db_pass, 
+                                                pool->conf->db_name, 
+                                                pool->conf->db_port, NULL, 0)) {
+                            fprintf(stderr, "Reconnect failed: %s\n", mysql_error(pool->connections[i].conn));
+                            mysql_close(pool->connections[i].conn);
+                            pool->connections[i].conn = NULL; // 标记为无效
+                            
+                            // 重连失败，需要重新加锁并寻找下一个
+                            pthread_mutex_lock(&pool->lock);
+                            pool->available[i] = false; // 保持占用状态，防止其他线程拿到无效句柄
+                            continue; // 继续循环找下一个
+                        }
+                    } else {
+                        fprintf(stderr, "mysql_init failed during reconnect\n");
+                        pthread_mutex_lock(&pool->lock);
+                        pool->available[i] = false;
+                        continue;
                     }
                 }
                 
+                // 验证或重连成功，返回连接
                 return &pool->connections[i];
             }
         }
         
-        // 等待可用连接（带超时）
-        int ret = pthread_cond_timedwait(&pool->cond, &pool->lock, &timeout);
+        // 无可用连接，等待（带绝对超时）
+        int ret = pthread_cond_timedwait(&pool->cond, &pool->lock, &abs_timeout);
         if (ret == ETIMEDOUT) {
             pthread_mutex_unlock(&pool->lock);
             fprintf(stderr, "DB pool acquire timeout\n");
@@ -155,6 +185,8 @@ DBConnection* db_pool_acquire(DBPool *pool) {
         }
     }
 }
+
+
 
 
 // 归还连接：标记为可用，唤醒等待线程

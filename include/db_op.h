@@ -20,6 +20,7 @@ typedef struct {
     int size;        // 连接池大小
     pthread_mutex_t lock; // 连接池锁-仅用于管理池资源，不用于业务串行化
     pthread_cond_t cond;   // 条件变量-用于等待可用连接
+    Config *conf;    // 数据库配置
 } DBPool;
 
 // 初始化数据库环境（如 mysql_library_init）
