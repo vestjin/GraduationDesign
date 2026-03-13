@@ -15,8 +15,8 @@
 #include <sys/epoll.h>
 #include <pthread.h>
 
-#define MAX_EVENTS 64
-#define BUFFER_SIZE (7 * 1024 * 1024) // 7MB 缓冲区
+#define MAX_EVENTS 256
+#define BUFFER_SIZE (2 * 1024 * 1024) // 2MB 缓冲区
 
 // 全局变量
 extern Config g_conf;

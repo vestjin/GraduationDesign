@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
+#include <unistd.h>
 
 Config g_conf;
 DBConnection *g_db;
@@ -22,8 +23,14 @@ int main() {
         return -1;
     }
 
-    // 3. 启动服务器 (端口 8080, 线程池 4 个线程)
-    start_server(8080, 4);
+    // 获取cpu核心数
+    int cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
+    // 线程池大小 = cpu核心数 * 2
+    int thread_count = cpu_cores * 2;
+    printf("CPU cores: %d, Thread pool size: %d\n", cpu_cores, thread_count);
+
+    // 3. 启动服务器 (端口 8080, 线程池大小根据CPU核心数自动调整)
+    start_server(8080, thread_count);
 
     // 清理资源 (实际上 start_server 是死循环，不会执行到这里)
     db_close(g_db);
