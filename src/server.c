@@ -16,12 +16,13 @@
 #include <pthread.h>
 
 #define MAX_EVENTS 256
-#define BUFFER_SIZE (2 * 1024 * 1024) // 2MB 缓冲区
+#define BUFFER_SIZE (7 * 1024 * 1024) // 2MB 缓冲区
 
 // 全局变量
 extern Config g_conf;
 extern DBConnection *g_db;
-extern pthread_mutex_t g_db_lock;
+extern DBPool *g_db_pool; // 替换全局连接为连接池
+// extern pthread_mutex_t g_db_lock;
 
 static int set_nonblocking(int sockfd) {
     int flags = fcntl(sockfd, F_GETFL, 0);
@@ -130,8 +131,23 @@ void process_client_request(void *arg) {
         goto cleanup;
     }
 
+    // 【关键修改】获取数据库连接
+    // 阻塞等待，直到池中有可用连接
+    DBConnection *db = db_pool_acquire(g_db_pool);
+    if (!db) {
+        fprintf(stderr, "Failed to acquire DB connection.\n");
+        close(client_fd);
+        return; // 或者发送 503 错误
+    }
+
     // 5. 解析 HTTP
-    HttpRequest req;
+    HttpRequest req; // 隐患 - 未初始化
+    memset(&req, 0, sizeof(req)); // 关键：清零结构体，避免垃圾数据干扰解析
+
+    cJSON *req_json = NULL; // 解析后的 JSON 对象
+
+    fcntl(client_fd, F_SETFL, flags & ~O_NONBLOCK);
+
     if (parse_http_request(buffer, total_read, &req) != 0) {
         const char *bad_resp = "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n";
         send(client_fd, bad_resp, strlen(bad_resp), 0);
@@ -144,7 +160,7 @@ void process_client_request(void *arg) {
     
     // 【关键修复】全局解析 JSON，并确保非 NULL
     // 即使没有 body，也创建一个空对象，方便 file_handler 使用 cJSON_GetObjectItem
-    cJSON *req_json = NULL;
+    // cJSON *req_json = NULL;
     if (req.method == HTTP_POST && req.body_len > 0) {
         req_json = cJSON_Parse(req.body);
     }
@@ -172,11 +188,11 @@ void process_client_request(void *arg) {
 
     // --- 用户模块 ---
     if (strcmp(req.url, "/api/user/login") == 0 && req.method == HTTP_POST) {
-        // 这里的 req_json 保证不为 NULL
-        json_resp_obj = handle_login(g_db, req_json, "127.0.0.1");
+        // 修改-传入db,移除锁参数
+        json_resp_obj = handle_login(db, req_json, "127.0.0.1");
     } 
     else if (strcmp(req.url, "/api/user/register") == 0 && req.method == HTTP_POST) {
-        json_resp_obj = handle_register(g_db, req_json);
+        json_resp_obj = handle_register(db, req_json);
     }
 
     // --- 文件模块 ---
@@ -186,8 +202,8 @@ void process_client_request(void *arg) {
         get_url_param(req.url, "token", token_from_url);
         // 优先使用Header下的Token, 如果没有则使用url中的
         const char *effective_token = (strlen(req.token) > 0) ? req.token : token_from_url;
-        // 验证 Token
-        long user_id = verify_user_token(g_db, effective_token, &g_db_lock);
+        // 验证 Token，传入db, 移除锁参数
+        long user_id = verify_user_token(db, effective_token);
         
         if (user_id <= 0) {
             json_resp_obj = cJSON_CreateObject();
@@ -196,37 +212,37 @@ void process_client_request(void *arg) {
         } else {
             // 文件操作使用同一个 req_json
             if (strcmp(req.url, "/api/files/list") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_file_list(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_file_list(db, user_id, req_json);
             }
             else if (strcmp(req.url, "/api/files/mkdir") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_file_mkdir(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_file_mkdir(db, user_id, req_json);
             }
             else if (strcmp(req.url, "/api/files/rename") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_file_rename(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_file_rename(db, user_id, req_json);
             }
             else if (strcmp(req.url, "/api/files/delete") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_file_delete(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_file_delete(db, user_id, req_json);
             }
             else if (strcmp(req.url, "/api/files/move") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_file_move(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_file_move(db, user_id, req_json);
             }
             else if (strcmp(req.url, "/api/files/upload/check") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_upload_check(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_upload_check(db, user_id, req_json);
             }
             else if (strcmp(req.url, "/api/files/upload/complete") == 0 && req.method == HTTP_POST) {
-                json_resp_obj = handle_upload_complete(g_db, user_id, req_json, &g_db_lock);
+                json_resp_obj = handle_upload_complete(db, user_id, req_json);
             }
             else if (strncmp(req.url, "/api/files/view", 15) == 0 && req.method == HTTP_GET) {
-                handle_file_view(client_fd, g_db, user_id, &req, &g_db_lock);
+                handle_file_view(client_fd, db, user_id, &req);
                 json_resp_obj = (cJSON*)0x1; //标记处理，防止后续发送JSON响应。
             }
             else if (strcmp(req.url, "/api/files/download") == 0 && req.method == HTTP_POST) {
-                handle_file_download(client_fd, g_db, user_id, req_json, &g_db_lock);
+                handle_file_download(client_fd, db, user_id, req_json);
                 json_resp_obj = (cJSON*)0x1; 
             }
             else if (strncmp(req.url, "/api/files/upload/chunk", 23) == 0 && req.method == HTTP_POST) {
                 // 注意：这里不传 req_json，而是传 &req
-                handle_upload_chunk(client_fd, g_db, user_id, &req, &g_db_lock);
+                handle_upload_chunk(client_fd, db, user_id, &req);
                 json_resp_obj = (cJSON*)0x1; 
             }
             else {
@@ -270,10 +286,14 @@ void process_client_request(void *arg) {
     // 9. 统一清理标签
 cleanup:
     free_http_request(&req);
-    // 注意：这里我们手动释放 req_json，因为它是在函数内部 malloc/parse 的
+    // 这里手动释放 req_json，因为它是在函数内部 malloc/parse 的
     if (req_json) cJSON_Delete(req_json);
     free(buffer); 
     close(client_fd);
+    // 释放数据库连接回池
+    // 必须保证所有退出路径上归还，否则连接池耗尽
+    if (db) db_pool_release(g_db_pool, db);
+
 }
 
 void start_server(int port, int thread_count) {
