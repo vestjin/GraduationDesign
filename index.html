@@ -426,8 +426,21 @@
                     const isFolder = f.file_type ===1;
                     
                     let sizeStr = f.file_size + ' B';
-                    if(f.file_size > 1024*1024) sizeStr = (f.file_size/1024/1024).toFixed(2) + ' MB';
+                    if (f.file_size > 1024*1024*1024) sizeStr = (f.file_size/1024/1024/1024).toFixed(2) + ' GB';
+                    else if(f.file_size > 1024*1024) sizeStr = (f.file_size/1024/1024).toFixed(2) + ' MB';
                     else if(f.file_size > 1024) sizeStr = (f.file_size/1024).toFixed(2) + ' KB';
+
+                    // 【新增】预览按钮逻辑
+                    const ext = f.file_name.split('.').pop().toLowerCase();
+                    const previewExts = ['txt', 'log', 'md', 'jpg', 'jpeg', 'png', 'gif', 'pdf'];
+                    const canPreview = !isFolder && previewExts.includes(ext);
+                    
+                    let previewBtn = '';
+                    if (canPreview) {
+                        // 关键：构建 GET 请求 URL，携带 token
+                        const viewUrl = `${API_BASE}/api/files/view?file_id=${f.file_id}&token=${token}`;
+                        previewBtn = `<button onclick="window.open('${viewUrl}', '_blank')" class="op-btn" style="background-color: #9c27b0;">预览</button>`;
+                    }
 
                     tr.innerHTML = `
                         <td class="${isFolder ? 'folder' : ''}" 
@@ -438,6 +451,7 @@
                         <td>${sizeStr}</td>
                         <td>${isFolder ? '文件夹' : '文件'}</td>
                         <td>
+                            ${previewBtn}
                             ${!isFolder ? `<button onclick="downloadFile(${f.file_id}, '${f.file_name}')" class="op-btn" style="background-color: #4CAF50;">下载</button>` : ''}
                             <button onclick="doRename(${f.file_id}, '${f.file_name}')" class="op-btn" style="background-color: #FF9800;">改名</button>
                             <button onclick="openMoveModal(${f.file_id})" class="op-btn" style="background-color: #2196F3;">移动</button>

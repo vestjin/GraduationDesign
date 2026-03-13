@@ -181,8 +181,13 @@ void process_client_request(void *arg) {
 
     // --- 文件模块 ---
     else if (strncmp(req.url, "/api/files/", 11) == 0) {
+        // 改进：支持URL参数中的Token,用于windows.open GET
+        char token_from_url[128] = {0};
+        get_url_param(req.url, "token", token_from_url);
+        // 优先使用Header下的Token, 如果没有则使用url中的
+        const char *effective_token = (strlen(req.token) > 0) ? req.token : token_from_url;
         // 验证 Token
-        long user_id = verify_user_token(g_db, req.token, &g_db_lock);
+        long user_id = verify_user_token(g_db, effective_token, &g_db_lock);
         
         if (user_id <= 0) {
             json_resp_obj = cJSON_CreateObject();
@@ -210,6 +215,10 @@ void process_client_request(void *arg) {
             }
             else if (strcmp(req.url, "/api/files/upload/complete") == 0 && req.method == HTTP_POST) {
                 json_resp_obj = handle_upload_complete(g_db, user_id, req_json, &g_db_lock);
+            }
+            else if (strncmp(req.url, "/api/files/view", 15) == 0 && req.method == HTTP_GET) {
+                handle_file_view(client_fd, g_db, user_id, &req, &g_db_lock);
+                json_resp_obj = (cJSON*)0x1; //标记处理，防止后续发送JSON响应。
             }
             else if (strcmp(req.url, "/api/files/download") == 0 && req.method == HTTP_POST) {
                 handle_file_download(client_fd, g_db, user_id, req_json, &g_db_lock);

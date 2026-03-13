@@ -41,7 +41,7 @@ long verify_user_token(DBConnection *db, const char *token, pthread_mutex_t *db_
 }
 
 // 辅助：从 URL 中解析参数
-static void get_url_param(const char *url, const char *key, char *output) {
+void get_url_param(const char *url, const char *key, char *output) {
     const char *start = strchr(url, '?');
     if (!start) { output[0] = 0; return; }
     start++; 
@@ -60,6 +60,97 @@ static void get_url_param(const char *url, const char *key, char *output) {
         token = strtok(NULL, "&");
     }
     output[0] = 0;
+}
+
+// 【新增】辅助函数：根据文件名获取 MIME 类型
+static const char* get_mime_type(const char *filename) {
+    const char *ext = strrchr(filename, '.');
+    if (!ext) return "application/octet-stream";
+    
+    if (strcasecmp(ext, ".txt") == 0 || strcasecmp(ext, ".log") == 0 || strcasecmp(ext, ".md") == 0)
+        return "text/plain; charset=utf-8";
+    if (strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0)
+        return "image/jpeg";
+    if (strcasecmp(ext, ".png") == 0)
+        return "image/png";
+    if (strcasecmp(ext, ".gif") == 0)
+        return "image/gif";
+    if (strcasecmp(ext, ".pdf") == 0)
+        return "application/pdf";
+    
+    return "application/octet-stream"; // 默认二进制流
+}
+
+// 【新增】实现文件预览处理函数
+void handle_file_view(int client_fd, DBConnection *db, long user_id, HttpRequest *req, pthread_mutex_t *db_lock) {
+    // 1. 从 URL 中解析 file_id (GET 请求参数在 URL 中)
+    char file_id_str[32] = {0};
+    get_url_param(req->url, "file_id", file_id_str);
+    
+    if (strlen(file_id_str) == 0) {
+        const char *err = "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n";
+        send(client_fd, err, strlen(err), 0);
+        close(client_fd);
+        return;
+    }
+    long file_id = atol(file_id_str);
+
+    // 2. 查询数据库获取文件信息
+    char sql[2048];
+    char filename_real[256]; 
+    char filepath_real[512];
+
+    snprintf(sql, sizeof(sql), "SELECT file_name, file_path, file_size FROM files WHERE file_id=%ld AND user_id=%ld", file_id, user_id);
+    
+    MYSQL_RES *res = NULL;
+    pthread_mutex_lock(db_lock);
+    res = db_execute_query(db, sql);
+    pthread_mutex_unlock(db_lock);
+    
+    if (!res || mysql_num_rows(res) == 0) {
+        if(res) mysql_free_result(res);
+        const char *not_found = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+        send(client_fd, not_found, strlen(not_found), 0);
+        close(client_fd);
+        return;
+    }
+
+    MYSQL_ROW row = mysql_fetch_row(res);
+    strncpy(filename_real, row[0], sizeof(filename_real));
+    filename_real[sizeof(filename_real)-1] = '\0';
+    strncpy(filepath_real, row[1], sizeof(filepath_real));
+    filepath_real[sizeof(filepath_real)-1] = '\0';
+    off_t file_size = atoll(row[2]);
+    mysql_free_result(res);
+
+    // 3. 打开物理文件
+    int file_fd = open(filepath_real, O_RDONLY);
+    if (file_fd < 0) {
+        const char *server_err = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+        send(client_fd, server_err, strlen(server_err), 0);
+        close(client_fd);
+        return;
+    }
+
+    // 4. 构造响应头
+    const char *mime_type = get_mime_type(filename_real);
+    char header[1024];
+    snprintf(header, sizeof(header), 
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: %s\r\n"
+             "Content-Disposition: inline; filename=\"%s\"\r\n" // 关键：inline 表示浏览器内显示
+             "Content-Length: %ld\r\n"
+             "Access-Control-Allow-Origin: *\r\n"
+             "Connection: close\r\n"
+             "\r\n", mime_type, filename_real, (long)file_size);
+    
+    send(client_fd, header, strlen(header), 0);
+    
+    // 5. 零拷贝传输文件内容
+    sendfile(client_fd, file_fd, NULL, file_size);
+
+    close(file_fd);
+    close(client_fd);
 }
 
 cJSON* handle_file_list(DBConnection *db, long user_id, const cJSON *req_json, pthread_mutex_t *db_lock) {

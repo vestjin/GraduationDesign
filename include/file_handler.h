@@ -5,7 +5,8 @@
 #include "../libs/cJSON/cJSON.h"
 #include "../include/protocol.h"
 
-
+// 辅助函数声明
+void get_url_param(const char *url, const char *key, char *output);
 // 验证 Token 是否有效
 // 返回: 用户ID (>0) 成功, -1 失败
 long verify_user_token(DBConnection *db, const char *token, pthread_mutex_t *db_lock);
@@ -32,6 +33,13 @@ cJSON* handle_file_mkdir(DBConnection *db, long user_id, const cJSON *req_json, 
 void handle_file_download(int client_fd, DBConnection *db, long user_id, const cJSON *req_json, pthread_mutex_t *db_lock);
 // 分片上传
 void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequest *req, pthread_mutex_t *db_lock);
+
+// 处理文件预览请求
+// client_fd: 客户端套接字
+// db: 数据库连接
+// user_id: 用户ID (已验证)
+// req: HTTP请求结构体
+void handle_file_view(int client_fd, DBConnection *db, long user_id, HttpRequest *req, pthread_mutex_t *db_lock);
 
 cJSON* handle_file_rename(DBConnection *db, long user_id, const cJSON *req_json, pthread_mutex_t *db_lock);
 cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json, pthread_mutex_t *db_lock);
