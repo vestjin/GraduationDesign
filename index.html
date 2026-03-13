@@ -198,7 +198,9 @@
                 this.updateUI();
 
                 try {
-                    this.md5 = await this.calcMD5();
+                    if (!this.md5) {
+                        this.md5 = await this.calcMD5();
+                    }
                     const checkRes = await this.checkUpload(this.md5);
                     
                     if (checkRes.status === 'instant') {
@@ -206,7 +208,12 @@
                         return;
                     }
 
-                    this.offset = checkRes.offset || 0;
+                    // this.offset = checkRes.offset || 0;
+                    const serverOffset = checkRes.offset || 0;
+                    if (this.offset === 0) {
+                        this.offset = serverOffset;
+                    }
+                    // this.offset = Math.max(this.offset, checkRes.offset || 0);
                     const totalSize = this.file.size;
 
                     while (this.offset < totalSize && this.status === 'UPLOADING') {
