@@ -255,7 +255,7 @@
                     const spark = new SparkMD5.ArrayBuffer();
                     const reader = new FileReader();
                     let currentChunk = 0;
-                    const readChunkSize = 2 * 1024 * 1024; 
+                    const readChunkSize = 5 * 1024 * 1024; 
                     const chunks = Math.ceil(this.file.size / readChunkSize);
                     
                     const loadNext = () => {
