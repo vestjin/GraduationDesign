@@ -188,6 +188,38 @@
                 this.onComplete = onComplete;
                 this.onError = onError;
                 this.fileSafeId = file.name.replace(/\W/g,'_'); 
+                // 本地存储恢复断点
+                this.loadFromStorage();
+            }
+            // 新增：从本地存储加载断点
+            loadFromStorage() {
+                const savedData = localStorage.getItem(`upload_task_${this.fileSafeId}`);
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    if (data.md5 && data.offset > 0) {
+                        this.md5 = data.md5;
+                        this.offset = data.offset;
+                        this.progress = Math.floor((this.offset / this.file.size) * 100);
+                        console.log(`恢复断点: ${this.offset}字节 (${this.progress}%)`);
+                    }
+                }
+            }
+
+            // 新增：保存断点到本地存储
+            saveToStorage() {
+                const data = {
+                    md5: this.md5,
+                    offset: this.offset,
+                    fileSize: this.file.size,
+                    fileName: this.file.name,
+                    timestamp: Date.now()
+                };
+                localStorage.setItem(`upload_task_${this.fileSafeId}`, JSON.stringify(data));
+            }
+
+            // 新增：清除本地存储
+            clearStorage() {
+                localStorage.removeItem(`upload_task_${this.fileSafeId}`);
             }
 
             async start() {
@@ -210,18 +242,22 @@
 
                     // this.offset = checkRes.offset || 0;
                     const serverOffset = checkRes.offset || 0;
-                    if (this.offset === 0) {
-                        this.offset = serverOffset;
-                    }
+                    this.offset = Math.max(this.offset, serverOffset);
                     // this.offset = Math.max(this.offset, checkRes.offset || 0);
+                    // 立即保存断点信息，确保在上传过程中随时可以恢复
+                    this.saveToStorage();
+                    
                     const totalSize = this.file.size;
 
                     while (this.offset < totalSize && this.status === 'UPLOADING') {
                         const end = Math.min(this.offset + CHUNK_SIZE, totalSize);
                         const chunk = this.file.slice(this.offset, end);
+                        
                         await this.uploadChunk(this.md5, this.offset, chunk);
                         this.offset = end;
                         this.progress = Math.floor((this.offset / totalSize) * 100);
+                        // 每次成功上传一个分片后，立即保存断点信息
+                        this.saveToStorage();
                         this.updateUI();
                     }
 
@@ -233,6 +269,7 @@
                 } catch (error) {
                     if (error.name === 'AbortError') {
                         this.status = 'PAUSED'; 
+                        this.saveToStorage(); // 暂停时也保存当前进度
                     } else {
                         console.error(error);
                         this.status = 'ERROR';
@@ -319,6 +356,7 @@
                 this.status = 'FINISHED';
                 this.progress = 100;
                 this.updateUI();
+                this.clearStorage(); // 上传完成后清除本地存储的断点信息
                 this.onComplete(this);
             }
 
