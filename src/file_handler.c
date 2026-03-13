@@ -499,10 +499,12 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
 
     ssize_t written = pwrite(fd, req->body, req->body_len, (off_t)offset);
     close(fd);
+    // 计算新的总偏移量
+    long new_total_offset = offset + written;
 
     // pthread_mutex_lock(db_lock);
     if (written > 0) {
-        int new_total_offset = offset + written;
+        // int new_total_offset = offset + written;
         // 强制更新 DB
         snprintf(sql, sizeof(sql), 
                  "UPDATE file_records SET offset = %ld WHERE user_id=%ld AND file_md5='%s'", 
@@ -510,8 +512,17 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
         db_execute_update(db, sql);
     }
 
-    const char *ok = "HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
-    send(client_fd, ok, strlen(ok), 0);
+    // 【新增】返回JSON格式的确认信息，包含新的offset
+    char response[256];
+    snprintf(response, sizeof(response), 
+             "HTTP/1.1 200 OK\r\n"
+             "Content-Type: application/json\r\n"
+             "Access-Control-Allow-Origin: *\r\n"
+             "Content-Length: %d\r\n"
+             "\r\n"
+             "{\"code\":0,\"data\":{\"offset\":%ld}}", 
+             35, new_total_offset);
+    send(client_fd, response, strlen(response), 0);
     close(client_fd);
 }
 
