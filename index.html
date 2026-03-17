@@ -169,11 +169,49 @@
         // 配置
         const CHUNK_SIZE =5 * 1024 * 1024; // 5MB 分片
         const API_BASE = 'http://192.168.2.131:8080';
+        const MAX_CONCURRENT_UPLOADS = 3; // 最大并发上传数
         let token = localStorage.getItem('token');
         let currentParentId = 0;
         let pathStack = [{id: 0, name: 'Root'}];
         let fileToMoveId = null;
 
+        // ---------------------------------------------------------
+        // 【新增】并发控制器
+        // ---------------------------------------------------------
+        class UploadQueue {
+            constructor(maxConcurrent) {
+                this.maxConcurrent = maxConcurrent;
+                this.running = 0;
+                this.queue = [];
+            }
+
+            add(task) {
+                this.queue.push(task);
+                this.runNext();
+            }
+
+            runNext() {
+                while (this.running < this.maxConcurrent && this.queue.length > 0) {
+                    const task = this.queue.shift();
+                    this.running++;
+                    task.start().finally(() => {
+                        this.running--;
+                        this.runNext();
+                    });
+                }
+            }
+
+            getStats() {
+                return {
+                    running: this.running,
+                    waiting: this.queue.length,
+                    total: this.running + this.queue.length
+                };
+            }
+        }
+
+        const uploadQueue = new UploadQueue(MAX_CONCURRENT_UPLOADS);
+        const uploadTasks = [];
         // ---------------------------------------------------------
         // 任务管理器核心类
         // ---------------------------------------------------------
@@ -187,6 +225,8 @@
                 this.controller = null; 
                 this.onComplete = onComplete;
                 this.onError = onError;
+                this.retryCount = 0;
+                this.maxRetries = 3; // 【新增】最大重试次数
                 this.fileSafeId = file.name.replace(/\W/g,'_'); 
                 // 本地存储恢复断点
                 this.loadFromStorage();
@@ -231,8 +271,10 @@
 
                 try {
                     if (!this.md5) {
+                        this.updateStatus('计算MD5...');
                         this.md5 = await this.calcMD5();
                     }
+                    this.updateStatus('检查上传状态...');
                     const checkRes = await this.checkUpload(this.md5);
                     
                     if (checkRes.status === 'instant') {
@@ -253,7 +295,21 @@
                         const end = Math.min(this.offset + CHUNK_SIZE, totalSize);
                         const chunk = this.file.slice(this.offset, end);
                         
-                        await this.uploadChunk(this.md5, this.offset, chunk);
+                        // 添加重试机制
+                        let success = false;
+                        for (let attempt = 0; attempt < this.maxRetries && !success; attempt++) {
+                            try {
+                                await this.uploadChunk(this.md5, this.offset, chunk);
+                                success = true;
+                            } catch (error) {
+                                if (attempt === this.maxRetries - 1) {
+                                    throw error; // 最后一次重试失败，抛出异常
+                                }
+                                console.warn(`分片上传失败，重试 ${attempt + 1}/${this.maxRetries}`);
+                                await this.delay(1000 * (attempt + 1)); // 指数退避
+                            }
+                        }
+                        
                         this.offset = end;
                         this.progress = Math.floor((this.offset / totalSize) * 100);
                         // 每次成功上传一个分片后，立即保存断点信息
@@ -262,20 +318,41 @@
                     }
 
                     if (this.status === 'UPLOADING') {
+                        this.updateStatus('完成上传，正在合并...');
                         await this.completeUpload(this.md5);
                         this.finish();
                     }
 
                 } catch (error) {
+                    console.error('上传出错:', error);
                     if (error.name === 'AbortError') {
                         this.status = 'PAUSED'; 
                         this.saveToStorage(); // 暂停时也保存当前进度
                     } else {
-                        console.error(error);
+                        // console.error(error);
                         this.status = 'ERROR';
+                        this.retryCount++;
+                        if (this.retryCount < this.maxRetries) {
+                            console.log(`自动重试 ${this.retryCount}/${this.maxRetries}`);
+                            this.status = 'PENDING';
+                            uploadQueue.add(this); // 重新加入队列
+                            return; // 不调用 onError
+                        }
                         this.onError(this);
                     }
                     this.updateUI();
+                }
+            }
+
+            
+            delay(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+            updateStatus(text) {
+                const row = document.getElementById(`task-${this.fileSafeId}`);
+                if (row) {
+                    const statusText = row.querySelector('.status-text');
+                    if (statusText) statusText.innerText = text;
                 }
             }
 
@@ -390,7 +467,10 @@
                 } else if (this.status === 'ERROR') {
                     statusText.innerText = '失败';
                     btnAction.innerText = '重试';
-                    btnAction.onclick = () => this.start();
+                    btnAction.onclick = () => {
+                        this.retryCount = 0;
+                        uploadQueue.add(this);
+                    };
                     btnAction.className = 'btn-action btn-retry';
                 }
             }
@@ -400,7 +480,7 @@
         // 基础 API 功能
         // ---------------------------------------------------------
         
-        const uploadTasks = [];
+        // const uploadTasks = [];
 
         if (token) {
             showMain();
@@ -649,7 +729,6 @@
         // ---------------------------------------------------------
         // 多文件上传逻辑
         // ---------------------------------------------------------
-
         function handleFileSelect(event) {
             const files = Array.from(event.target.files);
             const tbody = document.getElementById('upload-tbody');
@@ -660,6 +739,11 @@
 
                 const tr = document.createElement('tr');
                 tr.id = `task-${file.name.replace(/\W/g,'_')}`;
+                
+                // 显示并发队列状态
+                const stats = uploadQueue.getStats();
+                const queueInfo = stats.waiting > 0 ? ` (队列:${stats.waiting})` : '';
+                
                 tr.innerHTML = `
                     <td>${file.name}</td>
                     <td>${(file.size/1024/1024).toFixed(1)} MB</td>
@@ -668,7 +752,7 @@
                             <div class="progress-bar" style="width: 0%">0%</div>
                         </div>
                     </td>
-                    <td class="status-text">等待中</td>
+                    <td class="status-text">等待中${queueInfo}</td>
                     <td><button class="btn-action">等待</button></td>
                 `;
                 tbody.appendChild(tr);
@@ -676,14 +760,25 @@
                 const task = new UploadTask(file, () => {
                     loadFiles();
                 }, (errTask) => {
+                    console.error('任务最终失败:', errTask.file.name);
                 });
+                
                 uploadTasks.push(task);
-
-                task.start();
+                
+                // 【关键】使用队列控制器启动任务
+                uploadQueue.add(task);
             });
             
             event.target.value = '';
         }
+
+        // 【新增】定期显示队列状态
+        setInterval(() => {
+            const stats = uploadQueue.getStats();
+            if (stats.total > 0) {
+                console.log(`上传队列: 运行中=${stats.running}, 等待中=${stats.waiting}`);
+            }
+        }, 5000);
     </script>
 </body>
 </html>

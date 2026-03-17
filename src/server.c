@@ -31,11 +31,15 @@ static int set_nonblocking(int sockfd) {
     return fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
 }
 
-// 【新增】设置 Socket 超时
-// 防止线程永远阻塞在 recv 上 (例如遇到 Expect: 100-continue 死锁)
-static int set_socket_timeout(int sockfd) {
+// 【新增】设置 Socket 超时，防止恶意或异常请求导致线程长时间阻塞
+// 动态设置 Socket 超时（根据请求类型）
+static int set_socket_timeout(int sockfd, int is_upload) {
     struct timeval tv;
-    tv.tv_sec = 10;  // 10秒超时
+    if (is_upload) {
+        tv.tv_sec = 300;  // 上传请求：5分钟超时
+    } else {
+        tv.tv_sec = 30;   // 普通请求：30秒超时
+    }
     tv.tv_usec = 0;
     if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv)) < 0) {
         perror("setsockopt timeout");
@@ -66,9 +70,12 @@ void process_client_request(void *arg) {
         printf("MALLOC FAILED!\n"); // 打印日志排查
         close(client_fd);
         return;
-    }
+    } 
+    // 在 process_client_request 中根据 URL 判断是否为上传请求
+    int is_upload_request = (strstr(req.url, "/upload/") != NULL);
+    // set_socket_timeout(client_fd, is_upload_request);
     // 【关键】增加超时设置
-    if (set_socket_timeout(client_fd) < 0) {
+    if (set_socket_timeout(client_fd, is_upload_request) < 0) {
         goto cleanup;
     }
 
