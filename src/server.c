@@ -72,10 +72,11 @@ void process_client_request(void *arg) {
         return;
     } 
     // 在 process_client_request 中根据 URL 判断是否为上传请求
-    int is_upload_request = (strstr(req.url, "/upload/") != NULL);
+    // int is_upload_request = (strstr(req.url, "/upload/") != NULL);
     // set_socket_timeout(client_fd, is_upload_request);
-    // 【关键】增加超时设置
-    if (set_socket_timeout(client_fd, is_upload_request) < 0) {
+    // 【修改】先设置默认超时（不要试图读取未初始化的 req.url）
+    // 这里直接设置一个能兼容上传的较长超时，或者默认超时
+    if (set_socket_timeout(client_fd, 0) < 0) { // 传入0，在函数内部设为30秒或60秒
         goto cleanup;
     }
 
