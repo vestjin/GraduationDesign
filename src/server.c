@@ -36,7 +36,7 @@ static int set_nonblocking(int sockfd) {
 static int set_socket_timeout(int sockfd, int is_upload) {
     struct timeval tv;
     if (is_upload) {
-        tv.tv_sec = 300;  // 上传请求：5分钟超时
+        tv.tv_sec = 60;  // 上传请求：60秒超时
     } else {
         tv.tv_sec = 30;   // 普通请求：30秒超时
     }

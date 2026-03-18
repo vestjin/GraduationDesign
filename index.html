@@ -211,7 +211,9 @@
         }
 
         const uploadQueue = new UploadQueue(MAX_CONCURRENT_UPLOADS);
-        const uploadTasks = [];
+            // 【优化3】使用 Map 管理活跃任务，支持快速查询和清理
+        const activeTasks = new Map(); // key: fileSafeId, value: UploadTask
+        // const uploadTasks = [];
         // ---------------------------------------------------------
         // 任务管理器核心类
         // ---------------------------------------------------------
@@ -227,9 +229,14 @@
                 this.onError = onError;
                 this.retryCount = 0;
                 this.maxRetries = 3; // 【新增】最大重试次数
-                this.fileSafeId = file.name.replace(/\W/g,'_'); 
+                this.fileSafeId = this.generateFileId(); // 生成唯一ID
                 // 本地存储恢复断点
                 this.loadFromStorage();
+            }
+            // 生成唯一文件标识（文件名+大小+最后修改时间）
+            generateFileId() {
+                // 使用文件名、大小和最后修改时间生成唯一标识
+                return `${this.file.name}_${this.file.size}_${this.file.lastModified}`.replace(/\W/g, '_');
             }
             // 新增：从本地存储加载断点
             loadFromStorage() {
@@ -252,6 +259,7 @@
                     offset: this.offset,
                     fileSize: this.file.size,
                     fileName: this.file.name,
+                    lastModified: this.file.lastModified,
                     timestamp: Date.now()
                 };
                 localStorage.setItem(`upload_task_${this.fileSafeId}`, JSON.stringify(data));
@@ -460,10 +468,11 @@
                     btnAction.className = 'btn-action btn-resume';
                 } else if (this.status === 'FINISHED') {
                     statusText.innerText = '完成';
-                    row.remove();
-                   // btnAction.innerText = 'X';
-                   // btnAction.className = 'btn-action btn-delete';
-                    // btnAction.onclick = () => row.remove();
+                    row.remove(); // 直接移除完成的任务行
+                    // setTimeout(() => {
+                    //     row.style.opacity = '0';
+                    //     setTimeout(() => row.remove(), 500);
+                    // }, 3000);
                 } else if (this.status === 'ERROR') {
                     statusText.innerText = '失败';
                     btnAction.innerText = '重试';
@@ -480,7 +489,7 @@
         // 基础 API 功能
         // ---------------------------------------------------------
         
-        // const uploadTasks = [];
+        const uploadTasks = [];
 
         if (token) {
             showMain();
@@ -733,14 +742,43 @@
             const files = Array.from(event.target.files);
             const tbody = document.getElementById('upload-tbody');
             
+            // 统计结果
+            let addedCount = 0;
+            let skippedCount = 0;
+            let skippedFiles = [];
+            
             files.forEach(file => {
-                const existingTask = uploadTasks.find(t => t.file.name === file.name && t.file.size === file.size);
-                if (existingTask) return; 
+                // 【关键修复】先创建真正的任务对象，而不是临时对象
+                // 这样确保 ID 是唯一的，且后续所有操作都使用同一个 ID
+                const task = new UploadTask(file, () => {
+                    loadFiles();
+                    // 任务完成后从 Map 中移除（延迟5秒）
+                    setTimeout(() => {
+                        activeTasks.delete(task.fileSafeId);
+                    }, 5000);
+                }, (errTask) => {
+                    console.error('任务失败:', errTask.file.name);
+                });
+                
+                const fileSafeId = task.fileSafeId; // 使用同一个 ID
+                
+                // 检查是否有正在上传的同文件
+                const existingTask = activeTasks.get(fileSafeId);
+                if (existingTask && existingTask.status !== 'FINISHED') {
+                    skippedCount++;
+                    skippedFiles.push(file.name);
+                    console.log(`跳过正在上传的文件: ${file.name}`);
+                    return; 
+                }
+
+                // 如果之前有已完成的任务，先清理
+                if (existingTask && existingTask.status === 'FINISHED') {
+                    activeTasks.delete(fileSafeId);
+                }
 
                 const tr = document.createElement('tr');
-                tr.id = `task-${file.name.replace(/\W/g,'_')}`;
+                tr.id = `task-${fileSafeId}`; // 使用同一个 ID 设置 DOM
                 
-                // 显示并发队列状态
                 const stats = uploadQueue.getStats();
                 const queueInfo = stats.waiting > 0 ? ` (队列:${stats.waiting})` : '';
                 
@@ -757,28 +795,52 @@
                 `;
                 tbody.appendChild(tr);
 
-                const task = new UploadTask(file, () => {
-                    loadFiles();
-                }, (errTask) => {
-                    console.error('任务最终失败:', errTask.file.name);
-                });
+                // 将任务存入 Map
+                activeTasks.set(fileSafeId, task);
                 
-                uploadTasks.push(task);
-                
-                // 【关键】使用队列控制器启动任务
+                // 将任务加入队列（队列会自动触发 start）
                 uploadQueue.add(task);
+                addedCount++;
             });
             
+            // 无论是否有文件被跳过，都清空文件选择框
             event.target.value = '';
+            
+            // 给用户反馈
+            if (skippedCount > 0) {
+                console.log(`已添加 ${addedCount} 个文件，跳过 ${skippedCount} 个正在上传的文件`);
+            }
         }
 
-        // 【新增】定期显示队列状态
+
+        // ---------------------------------------------------------
+        // 【新增】定期清理已完成的任务
+        // ---------------------------------------------------------
         setInterval(() => {
+            // 清理超过1小时未活动的已完成任务
+            const now = Date.now();
+            const timeout = 60 * 60 * 1000; // 1小时
+            
+            activeTasks.forEach((task, key) => {
+                if (task.status === 'FINISHED') {
+                    // 检查存储的时间戳
+                    const savedData = localStorage.getItem(`upload_task_${key}`);
+                    if (savedData) {
+                        const data = JSON.parse(savedData);
+                        if (now - data.timestamp > timeout) {
+                            activeTasks.delete(key);
+                            localStorage.removeItem(`upload_task_${key}`);
+                        }
+                    }
+                }
+            });
+            
+            // 打印队列状态
             const stats = uploadQueue.getStats();
             if (stats.total > 0) {
-                console.log(`上传队列: 运行中=${stats.running}, 等待中=${stats.waiting}`);
+                console.log(`上传队列状态: 运行中=${stats.running}, 等待中=${stats.waiting}, 活跃任务=${activeTasks.size}`);
             }
-        }, 5000);
+        }, 10000); // 每10秒检查一次
     </script>
 </body>
 </html>
