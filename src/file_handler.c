@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <pthread.h>
+#include <ctype.h>
 
 // 辅助函数：验证 Token
 long verify_user_token(DBConnection *db, const char *token) {
@@ -310,12 +311,39 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
 
     cJSON *root = cJSON_CreateObject();
     
-    const char *md5 = cJSON_GetObjectItem(req_json, "md5")->valuestring;
+    // 【修复1】安全获取MD5字段
+    cJSON *md5_obj = cJSON_GetObjectItem(req_json, "md5");
+    if (!md5_obj || !md5_obj->valuestring) {
+        cJSON_AddNumberToObject(root, "code", 400);
+        cJSON_AddStringToObject(root, "msg", "Missing or invalid md5 parameter");
+        return root;
+    }
+    const char *md5_raw = md5_obj->valuestring;
+    
+    // 【新增】验证MD5格式（防止路径穿越）
+    if (strlen(md5_raw) != 32) {
+        cJSON_AddNumberToObject(root, "code", 400);
+        cJSON_AddStringToObject(root, "msg", "Invalid MD5 length");
+        return root;
+    }
+    for (int i = 0; i < 32; i++) {
+        if (!isxdigit(md5_raw[i])) {
+            cJSON_AddNumberToObject(root, "code", 400);
+            cJSON_AddStringToObject(root, "msg", "Invalid MD5 format");
+            return root;
+        }
+    }
+    
+    // 【修复2】转义MD5防止SQL注入
+    char esc_md5[128];
+    db_escape_string(db, esc_md5, md5_raw, strlen(md5_raw));
+    
     long long file_size = cJSON_GetObjectItem(req_json, "file_size")->valueint;
     const char *file_name = cJSON_GetObjectItem(req_json, "file_name")->valuestring;
     int parent_id = cJSON_GetObjectItem(req_json, "parent_id")->valueint;
 
-    if (!md5 || file_size <= 0) {
+    // 【修复3】正确的参数检查
+    if (strlen(esc_md5) == 0 || file_size <= 0) {
         cJSON_AddNumberToObject(root, "code", 400);
         cJSON_AddStringToObject(root, "msg", "Invalid parameters");
         return root;
@@ -333,21 +361,15 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
     char sql[2048];
     char existing_path[512];
     
-    snprintf(sql, sizeof(sql), "SELECT file_path FROM files WHERE md5='%s'", md5);
-    MYSQL_RES *res = NULL;
-    
-    // pthread_mutex_lock(db_lock);
-    res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
+    snprintf(sql, sizeof(sql), "SELECT file_path FROM files WHERE md5='%s'", esc_md5);
+    MYSQL_RES *res = db_execute_query(db, sql);
     
     if (res && mysql_num_rows(res) > 0) {
         MYSQL_ROW row = mysql_fetch_row(res);
-        
-        // 拷贝路径
         strncpy(existing_path, row[0], sizeof(existing_path));
         existing_path[sizeof(existing_path)-1] = '\0';
-        
         mysql_free_result(res);
+        res = NULL; // 防止后续误释放
 
         char esc_name[256];
         db_escape_string(db, esc_name, file_name, strlen(file_name));
@@ -355,11 +377,9 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
         snprintf(sql, sizeof(sql), 
                  "INSERT INTO files (user_id, file_name, file_size, file_path, file_type, parent_id, md5) "
                  "VALUES (%ld, '%s', %lld, '%s', 0, %d, '%s')", 
-                 user_id, esc_name, file_size, existing_path, parent_id, md5);
+                 user_id, esc_name, file_size, existing_path, parent_id, esc_md5);
         
-        // pthread_mutex_lock(db_lock);
         if (db_execute_update(db, sql) > 0) {
-            // pthread_mutex_unlock(db_lock);
             snprintf(sql, sizeof(sql), "UPDATE user_storage_quota SET used_quota = used_quota + %lld WHERE user_id=%ld", file_size, user_id);
             db_execute_update(db, sql);
             cJSON_AddNumberToObject(root, "code", 0);
@@ -369,13 +389,15 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
             cJSON_AddItemToObject(root, "data", data);
             return root;
         } else {
-            // pthread_mutex_unlock(db_lock);
             cJSON_AddNumberToObject(root, "code", 500);
             cJSON_AddStringToObject(root, "msg", "DB error during instant upload");
             return root;
         }
     }
-    if (res) mysql_free_result(res);
+    if (res) {
+        mysql_free_result(res);
+        res = NULL;
+    }
 
     // 断点续传检测
     char record_id_str[64];
@@ -383,20 +405,17 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
     
     snprintf(sql, sizeof(sql), 
              "SELECT record_id, offset, status FROM file_records WHERE user_id=%ld AND file_md5='%s'", 
-             user_id, md5);
+             user_id, esc_md5);
     
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
 
     if (res && mysql_num_rows(res) > 0) {
         MYSQL_ROW row = mysql_fetch_row(res);
-        
         strcpy(record_id_str, row[0]);
         strcpy(offset_str, row[1]);
         int status = atoi(row[2]);
-        
         mysql_free_result(res);
+        res = NULL;
 
         if (status == 0) {
             cJSON_AddNumberToObject(root, "code", 0);
@@ -408,21 +427,22 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
             return root;
         }
     }
-    // 【关键修复】使用 else if 避免双重释放
-    else if (res) mysql_free_result(res);
+    if (res) {
+        mysql_free_result(res);
+        res = NULL;
+    }
 
     // 普通上传
     char temp_path[512];
-    snprintf(temp_path, sizeof(temp_path), "/storage/upload_%ld_%s.tmp", user_id, md5);
+    // 【修复4】使用已验证的md5_raw（仅含十六进制字符，安全）
+    snprintf(temp_path, sizeof(temp_path), "/storage/upload_%ld_%s.tmp", user_id, md5_raw);
 
     snprintf(sql, sizeof(sql), 
              "INSERT INTO file_records (user_id, file_md5, file_size, file_path, status, offset) "
              "VALUES (%ld, '%s', %lld, '%s', 0, 0)", 
-             user_id, md5, file_size, temp_path);
+             user_id, esc_md5, file_size, temp_path);
     
-    // pthread_mutex_lock(db_lock);
     if (db_execute_update(db, sql) > 0) {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 0);
         cJSON_AddStringToObject(root, "msg", "Ready to upload");
         cJSON *data = cJSON_CreateObject();
@@ -430,12 +450,12 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
         cJSON_AddNumberToObject(data, "offset", 0);
         cJSON_AddItemToObject(root, "data", data);
     } else {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 500);
         cJSON_AddStringToObject(root, "msg", "Failed to create upload record");
     }
     return root;
 }
+
 
 void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequest *req) {
     char md5[64] = {0};
