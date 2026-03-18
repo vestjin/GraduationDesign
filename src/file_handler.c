@@ -440,12 +440,18 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
     // 【修复4】使用已验证的md5_raw（仅含十六进制字符，安全）
     snprintf(temp_path, sizeof(temp_path), "/storage/upload_%ld_%s.tmp", user_id, md5_raw);
 
-    snprintf(sql, sizeof(sql), 
-             "INSERT INTO file_records (user_id, file_md5, file_size, file_path, status, offset) "
+    // 【新增】在插入前，先删除该文件所有已完成的旧记录（status=1）
+    // 这解决了重复上传同一文件时的唯一索引冲突问题
+    snprintf(sql, sizeof(sql), "DELETE FROM file_records WHERE user_id=%ld AND file_md5='%s' AND status=1", user_id, esc_md5);
+    db_execute_update(db, sql); // 忽略结果，无论删没删都继续
+
+    // 【修复】使用 INSERT ... VALUES ...
+    snprintf(sql, sizeof(sql), "INSERT INTO file_records (user_id, file_md5, file_size, file_path, status, offset) "
              "VALUES (%ld, '%s', %lld, '%s', 0, 0)", 
              user_id, esc_md5, file_size, temp_path);
     
     if (db_execute_update(db, sql) > 0) {
+        // 插入成功，是新任务
         cJSON_AddNumberToObject(root, "code", 0);
         cJSON_AddStringToObject(root, "msg", "Ready to upload");
         cJSON *data = cJSON_CreateObject();
@@ -453,8 +459,27 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
         cJSON_AddNumberToObject(data, "offset", 0);
         cJSON_AddItemToObject(root, "data", data);
     } else {
-        cJSON_AddNumberToObject(root, "code", 500);
-        cJSON_AddStringToObject(root, "msg", "Failed to create upload record");
+        // 插入失败，说明存在 status=0 的并发竞争（被其他线程抢先插入了）
+        fprintf(stderr, "Concurrent insert detected for MD5 %s, re-querying.\n", esc_md5);
+        
+        // 再次查询（此时查 status=0 必然能查到，因为是唯一索引限制住了）
+        snprintf(sql, sizeof(sql), "SELECT record_id, offset, status FROM file_records WHERE user_id=%ld AND file_md5='%s' AND status=0", user_id, esc_md5);
+        MYSQL_RES *res2 = db_execute_query(db, sql);
+        if (res2 && mysql_num_rows(res2) > 0) {
+            MYSQL_ROW row2 = mysql_fetch_row(res2);
+            // 找到了，返回断点续传
+            cJSON_AddNumberToObject(root, "code", 0);
+            cJSON_AddStringToObject(root, "msg", "Resume upload (Concurrent)");
+            cJSON *data = cJSON_CreateObject();
+            cJSON_AddStringToObject(data, "status", "resume");
+            cJSON_AddNumberToObject(data, "offset", atoll(row2[1]));
+            cJSON_AddItemToObject(root, "data", data);
+            mysql_free_result(res2);
+        } else {
+            // 极端情况：如果这里还找不到，说明是 status=1 的残留数据没清干净（虽然前面删了，但为了保险）
+            cJSON_AddNumberToObject(root, "code", 500);
+            cJSON_AddStringToObject(root, "msg", "Database state error (record exists but not active)");
+        }
     }
     return root;
 }

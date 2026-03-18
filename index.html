@@ -318,7 +318,18 @@
                             }
                         }
                         
-                        this.offset = end;
+                        // 【修复2】使用服务端返回的真实偏移量更新本地状态
+                        // 不再使用 this.offset = end (乐观更新)
+                        const confirmedOffset = await this.uploadChunk(this.md5, this.offset, chunk);
+                        // 修正：只有当服务端确认的偏移量大于本地时才更新（防止回退）
+                        if (confirmedOffset > this.offset) {
+                            this.offset = confirmedOffset;
+                        } else {
+                            // 如果服务端返回的偏移量没变或异常，强制推进避免死循环，但打印警告
+                            console.warn("Server offset mismatch or not advanced. Local: ", this.offset, "Server: ", confirmedOffset);
+                            this.offset = end; 
+                        }
+                        
                         this.progress = Math.floor((this.offset / totalSize) * 100);
                         // 每次成功上传一个分片后，立即保存断点信息
                         this.saveToStorage();
@@ -427,6 +438,17 @@
                     signal: this.controller.signal
                 });
                 if (!response.ok) throw new Error('Upload failed');
+                
+                // 【修复1】解析服务端返回的真实偏移量，防止进度条跳动
+                try {
+                    const result = await response.json();
+                    if (result.code === 0 && result.data && result.data.offset !== undefined) {
+                        return result.data.offset; // 返回真实的偏移量
+                    }
+                } catch (e) {
+                    console.error("Parse chunk response error", e);
+                }
+                return offset + chunk.size; // 降级处理
             }
 
             async completeUpload(md5) {
