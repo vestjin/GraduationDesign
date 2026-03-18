@@ -17,7 +17,7 @@
 long verify_user_token(DBConnection *db, const char *token) {
     if (!token || strlen(token) == 0) return -1;
 
-    char sql[2048]; // 【修复】增大缓冲区
+    char sql[2048]; // 增大缓冲区
     char esc_token[128];
     db_escape_string(db, esc_token, token, strlen(token));
 
@@ -74,7 +74,7 @@ void get_url_param(const char *url,const char *key,char *out)
         token = strtok_r(NULL,"&",&saveptr);
     }
 }
-// 【新增】辅助函数：根据文件名获取 MIME 类型
+// 辅助函数：根据文件名获取 MIME 类型
 static const char* get_mime_type(const char *filename) {
     const char *ext = strrchr(filename, '.');
     if (!ext) return "application/octet-stream";
@@ -96,7 +96,7 @@ static const char* get_mime_type(const char *filename) {
     return "application/octet-stream"; // 默认二进制流
 }
 
-// 【新增】实现文件预览处理函数
+// 实现文件预览处理函数
 void handle_file_view(int client_fd, DBConnection *db, long user_id, HttpRequest *req) {
     // 1. 从 URL 中解析 file_id (GET 请求参数在 URL 中)
     char file_id_str[32] = {0};
@@ -118,9 +118,7 @@ void handle_file_view(int client_fd, DBConnection *db, long user_id, HttpRequest
     snprintf(sql, sizeof(sql), "SELECT file_name, file_path, file_size FROM files WHERE file_id=%ld AND user_id=%ld", file_id, user_id);
     
     MYSQL_RES *res = NULL;
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (!res || mysql_num_rows(res) == 0) {
         if(res) mysql_free_result(res);
@@ -192,9 +190,7 @@ cJSON* handle_file_list(DBConnection *db, long user_id, const cJSON *req_json) {
                  user_id, parent_id);
     }
 
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (!res) {
         cJSON_AddNumberToObject(root, "code", 500);
@@ -249,9 +245,7 @@ cJSON* handle_file_mkdir(DBConnection *db, long user_id, const cJSON *req_json) 
              user_id, parent_id, esc_name);
 
     MYSQL_RES *res = NULL;
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (res && mysql_num_rows(res) > 0) {
         mysql_free_result(res);
@@ -266,13 +260,10 @@ cJSON* handle_file_mkdir(DBConnection *db, long user_id, const cJSON *req_json) 
              "VALUES (%ld, '%s', 0, '/', 1, %d)", 
              user_id, esc_name, parent_id);
 
-    // pthread_mutex_lock(db_lock);
     if (db_execute_update(db, sql) > 0) {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 0);
         cJSON_AddStringToObject(root, "msg", "Folder created successfully");
     } else {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 500);
         cJSON_AddStringToObject(root, "msg", "Failed to create folder");
     }
@@ -289,9 +280,7 @@ static int check_quota_enough(DBConnection *db, long user_id, long long file_siz
     MYSQL_RES *res = NULL;
     int enough = 0;
 
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (res) {
         if (mysql_num_rows(res) > 0) {
@@ -313,8 +302,7 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
     }
 
     cJSON *root = cJSON_CreateObject();
-    
-    // 【修复1】安全获取MD5字段
+    // 安全获取MD5字段
     cJSON *md5_obj = cJSON_GetObjectItem(req_json, "md5");
     if (!md5_obj || !md5_obj->valuestring) {
         cJSON_AddNumberToObject(root, "code", 400);
@@ -323,7 +311,7 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
     }
     const char *md5_raw = md5_obj->valuestring;
     
-    // 【新增】验证MD5格式（防止路径穿越）
+    // 验证MD5格式（防止路径穿越）
     if (strlen(md5_raw) != 32) {
         cJSON_AddNumberToObject(root, "code", 400);
         cJSON_AddStringToObject(root, "msg", "Invalid MD5 length");
@@ -337,7 +325,7 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
         }
     }
     
-    // 【修复2】转义MD5防止SQL注入
+    // 转义MD5防止SQL注入
     char esc_md5[128];
     db_escape_string(db, esc_md5, md5_raw, strlen(md5_raw));
     
@@ -345,7 +333,7 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
     const char *file_name = cJSON_GetObjectItem(req_json, "file_name")->valuestring;
     int parent_id = cJSON_GetObjectItem(req_json, "parent_id")->valueint;
 
-    // 【修复3】正确的参数检查
+    // 正确的参数检查
     if (strlen(esc_md5) == 0 || file_size <= 0) {
         cJSON_AddNumberToObject(root, "code", 400);
         cJSON_AddStringToObject(root, "msg", "Invalid parameters");
@@ -437,15 +425,14 @@ cJSON* handle_upload_check(DBConnection *db, long user_id, const cJSON *req_json
 
     // 普通上传
     char temp_path[512];
-    // 【修复4】使用已验证的md5_raw（仅含十六进制字符，安全）
+    // 使用已验证的md5_raw（仅含十六进制字符，安全）
     snprintf(temp_path, sizeof(temp_path), "/storage/upload_%ld_%s.tmp", user_id, md5_raw);
 
-    // 【新增】在插入前，先删除该文件所有已完成的旧记录（status=1）
-    // 这解决了重复上传同一文件时的唯一索引冲突问题
+    // 在插入前，先删除该文件所有已完成的旧记录（status=1）
+    // 解决了重复上传同一文件时的唯一索引冲突问题
     snprintf(sql, sizeof(sql), "DELETE FROM file_records WHERE user_id=%ld AND file_md5='%s' AND status=1", user_id, esc_md5);
     db_execute_update(db, sql); // 忽略结果，无论删没删都继续
 
-    // 【修复】使用 INSERT ... VALUES ...
     snprintf(sql, sizeof(sql), "INSERT INTO file_records (user_id, file_md5, file_size, file_path, status, offset) "
              "VALUES (%ld, '%s', %lld, '%s', 0, 0)", 
              user_id, esc_md5, file_size, temp_path);
@@ -497,7 +484,6 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
     char sql[2048];
 
     // 查询路径
-    // pthread_mutex_lock(db_lock);
     snprintf(sql, sizeof(sql), 
              "SELECT file_path FROM file_records WHERE user_id=%ld AND file_md5='%s' AND status=0", 
              user_id, md5);
@@ -505,7 +491,6 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
     MYSQL_RES *res = db_execute_query(db, sql);
     if (!res || mysql_num_rows(res) == 0) {
         if(res) mysql_free_result(res);
-        // pthread_mutex_unlock(db_lock);
         const char *not_found = "HTTP/1.1 404 Not Found\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\n\r\n";
         send(client_fd, not_found, strlen(not_found), 0);
         close(client_fd);
@@ -517,7 +502,6 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
     filepath_real[sizeof(filepath_real)-1] = '\0';
     
     mysql_free_result(res);
-    // pthread_mutex_unlock(db_lock);
 
     if (!req->body || req->body_len == 0) {
         const char *err_header = "HTTP/1.1 400 Bad Request\r\nAccess-Control-Allow-Origin: *\r\n\r\n";
@@ -550,7 +534,6 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
     // 计算新的总偏移量
     long new_total_offset = offset + written;
 
-    // pthread_mutex_lock(db_lock);
     if (written > 0) {
         // int new_total_offset = offset + written;
         // 强制更新 DB
@@ -560,7 +543,7 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
         db_execute_update(db, sql);
     }
 
-    // 【新增】返回JSON格式的确认信息，包含新的offset
+    // 返回JSON格式的确认信息，包含新的offset
     char response[256];
     snprintf(response, sizeof(response), 
              "HTTP/1.1 200 OK\r\n"
@@ -605,9 +588,7 @@ cJSON* handle_upload_complete(DBConnection *db, long user_id, const cJSON *req_j
              user_id, md5);
     
     MYSQL_RES *res = NULL;
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (!res || mysql_num_rows(res) == 0) {
         if(res) mysql_free_result(res);
@@ -634,32 +615,23 @@ cJSON* handle_upload_complete(DBConnection *db, long user_id, const cJSON *req_j
              "VALUES (%ld, '%s', %lld, '%s', 0, %d, '%s')", 
              user_id, esc_name, file_size, final_path_real, parent_id, md5);
 
-    // pthread_mutex_lock(db_lock);
     int insert_ret = db_execute_update(db, sql);
     if (insert_ret <= 0) {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 500);
         cJSON_AddStringToObject(root, "msg", "Failed to save file metadata");
         return root;
     }
-    // pthread_mutex_unlock(db_lock);
 
     snprintf(sql, sizeof(sql), "UPDATE file_records SET status=1 WHERE user_id=%ld AND file_md5='%s'", user_id, md5);
-    // pthread_mutex_lock(db_lock);
     db_execute_update(db, sql);
-    // pthread_mutex_unlock(db_lock);
 
     snprintf(sql, sizeof(sql), "UPDATE user_storage_quota SET used_quota = used_quota + %lld WHERE user_id=%ld", file_size, user_id);
-    // pthread_mutex_lock(db_lock);
     db_execute_update(db, sql);
-    // pthread_mutex_unlock(db_lock);
 
     snprintf(sql, sizeof(sql), 
              "INSERT INTO audit_logs (user_id, action_type, detail) VALUES (%ld, 'UPLOAD', 'File %s uploaded')", 
              user_id, esc_name);
-    // pthread_mutex_lock(db_lock);
     db_execute_update(db, sql);
-    // pthread_mutex_unlock(db_lock);
 
     cJSON_AddNumberToObject(root, "code", 0);
     cJSON_AddStringToObject(root, "msg", "Upload complete");
@@ -676,16 +648,14 @@ void handle_file_download(int client_fd, DBConnection *db, long user_id, const c
     }
     long file_id = id_obj->valueint;
 
-    char sql[2048]; // 【修复】增大缓冲区
+    char sql[2048]; // 增大缓冲区
     char filename_real[256]; 
     char filepath_real[512];
 
     snprintf(sql, sizeof(sql), "SELECT file_name, file_path, file_size FROM files WHERE file_id=%ld AND user_id=%ld", file_id, user_id);
     
     MYSQL_RES *res = NULL;
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (!res || mysql_num_rows(res) == 0) {
         if(res) mysql_free_result(res);
@@ -753,9 +723,7 @@ cJSON* handle_file_rename(DBConnection *db, long user_id, const cJSON *req_json)
     // 1. 查询信息
     snprintf(sql, sizeof(sql), "SELECT parent_id, file_type, file_name FROM files WHERE file_id=%ld AND user_id=%ld", file_id, user_id);
     MYSQL_RES *res = NULL;
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
     
     if (!res || mysql_num_rows(res) == 0) {
         if(res) mysql_free_result(res);
@@ -782,13 +750,10 @@ cJSON* handle_file_rename(DBConnection *db, long user_id, const cJSON *req_json)
     if(res) mysql_free_result(res);
 
     snprintf(sql, sizeof(sql), "UPDATE files SET file_name='%s' WHERE file_id=%ld", esc_name, file_id);
-    // pthread_mutex_lock(db_lock);
     if (db_execute_update(db, sql) > 0) {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 0);
         cJSON_AddStringToObject(root, "msg", "Rename success");
     } else {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 500);
         cJSON_AddStringToObject(root, "msg", "Database error");
     }
@@ -809,7 +774,7 @@ cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json)
     char filepath_real[512];
     long long file_size = 0;
     int file_type = 0;
-    const char *file_md5 = NULL; // 【新增】
+    const char *file_md5 = NULL; 
 
     // 1. 查询信息 (增加 md5)
     snprintf(sql, sizeof(sql), "SELECT file_path, file_size, file_type, md5 FROM files WHERE file_id=%ld AND user_id=%ld", file_id, user_id);
@@ -851,7 +816,7 @@ cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json)
     if (file_type == 0) {
         int should_delete_physical = 1; // 默认删除
 
-        // 【关键修复】检查引用计数
+        // 检查引用计数
         if (file_md5 && strlen(file_md5) > 0) {
             snprintf(sql, sizeof(sql), "SELECT COUNT(*) FROM files WHERE md5='%s' AND file_id != %ld", file_md5, file_id);
             MYSQL_RES *count_res = db_execute_query(db, sql);
@@ -912,9 +877,7 @@ cJSON* handle_file_move(DBConnection *db, long user_id, const cJSON *req_json) {
                  "SELECT file_id FROM files WHERE file_id=%ld AND user_id=%ld AND file_type=1", 
                  target_parent_id, user_id);
         MYSQL_RES *res = NULL;
-        // pthread_mutex_lock(db_lock);
         res = db_execute_query(db, sql);
-        // pthread_mutex_unlock(db_lock);
         
         if (!res || mysql_num_rows(res) == 0) {
             if(res) mysql_free_result(res);
@@ -957,13 +920,10 @@ cJSON* handle_file_move(DBConnection *db, long user_id, const cJSON *req_json) {
 
     // 3. 执行移动
     snprintf(sql, sizeof(sql), "UPDATE files SET parent_id=%ld WHERE file_id=%ld", target_parent_id, file_id);
-    // pthread_mutex_lock(db_lock);
     if (db_execute_update(db, sql) > 0) {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 0);
         cJSON_AddStringToObject(root, "msg", "Move success");
     } else {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 500);
         cJSON_AddStringToObject(root, "msg", "Database error");
     }

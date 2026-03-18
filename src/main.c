@@ -8,9 +8,9 @@
 #include <unistd.h>
 
 Config g_conf;
-// DBConnection *g_db;
+
 DBPool *g_db_pool; // 替换全局连接为连接池
-// pthread_mutex_t g_db_lock = PTHREAD_MUTEX_INITIALIZER;
+
 
 int main() {
     // 1. 加载配置
@@ -44,7 +44,7 @@ int main() {
     // 3. 启动服务器 (端口 8080, 线程池大小根据CPU核心数自动调整)
     start_server(8080, thread_count);
 
-    // 清理资源 (实际上 start_server 是死循环，不会执行到这里)
+    // 清理资源 
     db_pool_destroy(g_db_pool);
     mysql_library_end();
 

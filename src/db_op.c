@@ -111,7 +111,7 @@ DBPool* db_pool_create(Config *conf, int size) {
     return pool;
 }
 
-// 【关键优化】获取连接：不再持有全局大锁，而是获取独立的连接对象
+// 优化-获取连接：不再持有全局大锁，而是获取独立的连接对象
 DBConnection* db_pool_acquire(DBPool *pool) {
     if (!pool || pool->size <= 0) {
         return NULL;
@@ -119,7 +119,7 @@ DBConnection* db_pool_acquire(DBPool *pool) {
     
     pthread_mutex_lock(&pool->lock);
     
-    // 【修复1】超时计算移至锁内（循环外），确保从“开始等待”时刻计算，避免锁竞争导致的误差
+    // 超时计算移至锁内（循环外），确保从“开始等待”时刻计算，避免锁竞争导致的误差
     struct timespec abs_timeout;
     clock_gettime(CLOCK_REALTIME, &abs_timeout);
     abs_timeout.tv_sec += 10;  // 设置绝对超时时间点（当前时间 + 10秒）
@@ -147,7 +147,7 @@ DBConnection* db_pool_acquire(DBPool *pool) {
                     if (pool->connections[i].conn) {
                         mysql_options(pool->connections[i].conn, MYSQL_SET_CHARSET_NAME, "utf8mb4");
                         
-                        // 【修复2】真正执行数据库连接，使用保存的配置 pool->conf
+                        // 执行数据库连接，使用保存的配置 pool->conf
                         if (!mysql_real_connect(pool->connections[i].conn, 
                                                 pool->conf->db_host, 
                                                 pool->conf->db_user, 

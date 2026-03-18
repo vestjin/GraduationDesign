@@ -21,7 +21,7 @@ void compute_sha256(const char *str, char *output) {
     output[64] = 0; // 终止符
 }
 
-// 辅助函数：生成 Token (简单的随机字符串+时间戳，毕设够用)
+// 辅助函数：生成 Token (简单的随机字符串+时间戳)
 void generate_token(char *token) {
     srand(time(NULL));
     static const char alphanum[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -49,8 +49,7 @@ cJSON* handle_register(DBConnection *db, const cJSON *req_json) {
 
     // 2. 检查用户是否存在
     char sql[512];
-    snprintf(sql, sizeof(sql), "SELECT user_id FROM users WHERE username='%s'", username); // 简单起见直接拼，实际应转义username
-    // 注意：为了代码简洁，这里假设 username 不含特殊字符，严谨做法需转义
+    snprintf(sql, sizeof(sql), "SELECT user_id FROM users WHERE username='%s'", username); 
     
     MYSQL_RES *res = db_execute_query(db, sql);
     if (res) {
@@ -150,7 +149,7 @@ cJSON* handle_login(DBConnection *db, const cJSON *req_json, const char *client_
         return root;
     }
 
-    // 5. 记录日志 (可选，这里不写单独日志表操作，保持简洁)
+    // 5. 记录日志 (简化处理-不实现)
 
     // 6. 返回 Token
     cJSON *data = cJSON_CreateObject();

@@ -31,7 +31,7 @@ int parse_http_request(const char *buffer, int size, HttpRequest *req) {
     space = strchr(start, ' ');
     if (!space || space - start > 255) return -1;
     strncpy(req->url, start, space - start);
-    req->url[space - start] = '\0'; // 【修复】确保 URL 结束符
+    req->url[space - start] = '\0'; // 确保 URL 结束符
 
     // 2. 解析 Headers (寻找 Content-Length)
     char *body_start = strstr(buffer, "\r\n\r\n");
@@ -52,8 +52,7 @@ int parse_http_request(const char *buffer, int size, HttpRequest *req) {
     if (content_length > 0) {
         // 安全检查：防止声明长度比实际收到的还大
         if (content_length > body_len) {
-            // 这是一个截断的包或攻击
-            // 我们只拷贝能拷贝的
+            // 只拷贝能拷贝的
             content_length = body_len;
         }
 

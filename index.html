@@ -31,7 +31,7 @@
         .task-table td { padding: 8px; font-size: 12px; vertical-align: middle; }
         .op-btn { margin-right: 5px; font-size: 12px; padding: 5px 10px; }
 
-        /* 移动文件 模态框样式 (简单下拉选择版) */
+        /* 移动文件 模态框样式 (简单下拉) */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; /* 提高 z-index */
@@ -52,7 +52,7 @@
         }
 
         /* =========================================================== */
-        /* 【修复关键】将 .hidden 放到最后，并加 !important 确保生效 */
+        /* 将 .hidden 放到最后，并加 !important 确保生效 */
         .hidden { display: none !important; }
         /* =========================================================== */
     </style>
@@ -142,7 +142,7 @@
         </table>
     </div>
 
-    <!-- 移动文件 模态框 (简单下拉选择版) -->
+    <!-- 移动文件 模态框 (简单下拉) -->
     <div id="move-modal" class="hidden modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -176,7 +176,7 @@
         let fileToMoveId = null;
 
         // ---------------------------------------------------------
-        // 【新增】并发控制器
+        // 并发控制器
         // ---------------------------------------------------------
         class UploadQueue {
             constructor(maxConcurrent) {
@@ -211,7 +211,7 @@
         }
 
         const uploadQueue = new UploadQueue(MAX_CONCURRENT_UPLOADS);
-            // 【优化3】使用 Map 管理活跃任务，支持快速查询和清理
+            // 使用 Map 管理活跃任务，支持快速查询和清理
         const activeTasks = new Map(); // key: fileSafeId, value: UploadTask
         // const uploadTasks = [];
         // ---------------------------------------------------------
@@ -228,7 +228,7 @@
                 this.onComplete = onComplete;
                 this.onError = onError;
                 this.retryCount = 0;
-                this.maxRetries = 3; // 【新增】最大重试次数
+                this.maxRetries = 3; // 最大重试次数
                 this.fileSafeId = this.generateFileId(); // 生成唯一ID
                 // 本地存储恢复断点
                 this.loadFromStorage();
@@ -238,7 +238,7 @@
                 // 使用文件名、大小和最后修改时间生成唯一标识
                 return `${this.file.name}_${this.file.size}_${this.file.lastModified}`.replace(/\W/g, '_');
             }
-            // 新增：从本地存储加载断点
+            // 从本地存储加载断点
             loadFromStorage() {
                 const savedData = localStorage.getItem(`upload_task_${this.fileSafeId}`);
                 if (savedData) {
@@ -252,7 +252,7 @@
                 }
             }
 
-            // 新增：保存断点到本地存储
+            // 保存断点到本地存储
             saveToStorage() {
                 const data = {
                     md5: this.md5,
@@ -265,7 +265,7 @@
                 localStorage.setItem(`upload_task_${this.fileSafeId}`, JSON.stringify(data));
             }
 
-            // 新增：清除本地存储
+            // 清除本地存储
             clearStorage() {
                 localStorage.removeItem(`upload_task_${this.fileSafeId}`);
             }
@@ -318,10 +318,10 @@
                             }
                         }
                         
-                        // 【修复2】使用服务端返回的真实偏移量更新本地状态
+                        // 使用服务端返回的真实偏移量更新本地状态
                         // 不再使用 this.offset = end (乐观更新)
                         const confirmedOffset = await this.uploadChunk(this.md5, this.offset, chunk);
-                        // 修正：只有当服务端确认的偏移量大于本地时才更新（防止回退）
+                        // 只有当服务端确认的偏移量大于本地时才更新（防止回退）
                         if (confirmedOffset > this.offset) {
                             this.offset = confirmedOffset;
                         } else {
@@ -439,7 +439,7 @@
                 });
                 if (!response.ok) throw new Error('Upload failed');
                 
-                // 【修复1】解析服务端返回的真实偏移量，防止进度条跳动
+                // 解析服务端返回的真实偏移量，防止进度条跳动
                 try {
                     const result = await response.json();
                     if (result.code === 0 && result.data && result.data.offset !== undefined) {
@@ -491,10 +491,6 @@
                 } else if (this.status === 'FINISHED') {
                     statusText.innerText = '完成';
                     row.remove(); // 直接移除完成的任务行
-                    // setTimeout(() => {
-                    //     row.style.opacity = '0';
-                    //     setTimeout(() => row.remove(), 500);
-                    // }, 3000);
                 } else if (this.status === 'ERROR') {
                     statusText.innerText = '失败';
                     btnAction.innerText = '重试';
@@ -598,14 +594,14 @@
                     else if(f.file_size > 1024*1024) sizeStr = (f.file_size/1024/1024).toFixed(2) + ' MB';
                     else if(f.file_size > 1024) sizeStr = (f.file_size/1024).toFixed(2) + ' KB';
 
-                    // 【新增】预览按钮逻辑
+                    // 预览按钮逻辑
                     const ext = f.file_name.split('.').pop().toLowerCase();
                     const previewExts = ['txt', 'log', 'md', 'jpg', 'jpeg', 'png', 'gif', 'pdf'];
                     const canPreview = !isFolder && previewExts.includes(ext);
                     
                     let previewBtn = '';
                     if (canPreview) {
-                        // 关键：构建 GET 请求 URL，携带 token
+                        // 构建 GET 请求 URL，携带 token
                         const viewUrl = `${API_BASE}/api/files/view?file_id=${f.file_id}&token=${token}`;
                         previewBtn = `<button onclick="window.open('${viewUrl}', '_blank')" class="op-btn" style="background-color: #9c27b0;">预览</button>`;
                     }
@@ -707,12 +703,12 @@
         }
 
         // ---------------------------------------------------------
-        // 文件移动逻辑 (下拉列表版 - 最终修复版)
+        // 文件移动逻辑 (下拉列表)
         // ---------------------------------------------------------
 
         async function openMoveModal(fileId) {
             fileToMoveId = fileId;
-            // 【关键】先移除 hidden 类，显示弹窗
+            // 先移除 hidden 类，显示弹窗
             const modal = document.getElementById('move-modal');
             modal.classList.remove('hidden');
 
@@ -747,7 +743,7 @@
         }
 
         function closeMoveModal() {
-            // 【关键】添加 hidden 类，强制隐藏
+            // 添加 hidden 类，强制隐藏
             document.getElementById('move-modal').classList.add('hidden');
             fileToMoveId = null;
         }
@@ -782,7 +778,7 @@
             let skippedFiles = [];
             
             files.forEach(file => {
-                // 【关键修复】先创建真正的任务对象，而不是临时对象
+                // 先创建真正的任务对象，而不是临时对象
                 // 这样确保 ID 是唯一的，且后续所有操作都使用同一个 ID
                 const task = new UploadTask(file, () => {
                     loadFiles();
@@ -848,7 +844,7 @@
 
 
         // ---------------------------------------------------------
-        // 【新增】定期清理已完成的任务
+        // 定期清理已完成的任务
         // ---------------------------------------------------------
         setInterval(() => {
             // 清理超过1小时未活动的已完成任务

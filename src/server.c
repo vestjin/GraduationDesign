@@ -23,7 +23,7 @@
 extern Config g_conf;
 extern DBConnection *g_db;
 extern DBPool *g_db_pool; // 替换全局连接为连接池
-// extern pthread_mutex_t g_db_lock;
+
 
 static int set_nonblocking(int sockfd) {
     int flags = fcntl(sockfd, F_GETFL, 0);
@@ -31,7 +31,7 @@ static int set_nonblocking(int sockfd) {
     return fcntl(sockfd, F_SETFL, flags | O_NONBLOCK);
 }
 
-// 【新增】设置 Socket 超时，防止恶意或异常请求导致线程长时间阻塞
+// 设置 Socket 超时，防止恶意或异常请求导致线程长时间阻塞
 // 动态设置 Socket 超时（根据请求类型）
 static int set_socket_timeout(int sockfd, int is_upload) {
     struct timeval tv;
@@ -51,7 +51,7 @@ static int set_socket_timeout(int sockfd, int is_upload) {
 void process_client_request(void *arg) {
     int client_fd = *(int*)arg;
     free(arg); 
-    // ========== 1. 变量声明区（必须全部在函数开头） ==========
+    // 1. 变量声明区（必须全部在函数开头） 
     char *buffer = NULL;           // 接收缓冲区
     DBConnection *db = NULL;       // 数据库连接（初始化为NULL）
     HttpRequest req;               // HTTP请求结构体
@@ -71,10 +71,9 @@ void process_client_request(void *arg) {
         close(client_fd);
         return;
     } 
-    // 在 process_client_request 中根据 URL 判断是否为上传请求
-    // int is_upload_request = (strstr(req.url, "/upload/") != NULL);
+
     // set_socket_timeout(client_fd, is_upload_request);
-    // 【修改】先设置默认超时（不要试图读取未初始化的 req.url）
+    // 先设置默认超时
     // 这里直接设置一个能兼容上传的较长超时，或者默认超时
     if (set_socket_timeout(client_fd, 0) < 0) { // 传入0，在函数内部设为30秒或60秒
         goto cleanup;
@@ -89,7 +88,7 @@ void process_client_request(void *arg) {
         int bytes = recv(client_fd, buffer + total_read, (BUFFER_SIZE - 1) - total_read, 0);
         if (bytes < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                // 超时了？正常来说不会 EAGAIN，因为我们已经设置了 SO_RCVTIMEO
+                // 超时了？正常来说不会 EAGAIN，因为设置了 SO_RCVTIMEO
                 // 如果这里触发了，说明超时了
                 printf("Timeout or Error\n");
             } else {
@@ -119,7 +118,7 @@ void process_client_request(void *arg) {
     // 4. 循环读取 Body
     if (header_found) {
         int total_needed = header_len + content_length;
-        // 【安全检查】防止 Content-Length 声称的数值过大，导致 Buffer 溢出
+        // 防止 Content-Length 声称的数值过大，导致 Buffer 溢出
         if (total_needed > BUFFER_SIZE) {
             printf("Request too large (declared %d, buffer %d)\n", total_needed, BUFFER_SIZE);
             goto cleanup;
@@ -146,7 +145,7 @@ void process_client_request(void *arg) {
         goto cleanup;
     }
 
-    // 【关键修复】获取数据库连接：改为从连接池获取，且不再持有全局锁
+    // 获取数据库连接：改为从连接池获取，且不再持有全局锁
     db = db_pool_acquire(g_db_pool);
     if (!db) {
         fprintf(stderr, "Failed to acquire DB connection.\n");
@@ -167,7 +166,7 @@ void process_client_request(void *arg) {
            (req.method==HTTP_GET?"GET":"POST"), req.url);
 
     
-    // 【关键修复】全局解析 JSON，并确保非 NULL
+    // 全局解析 JSON，并确保非 NULL
     // 即使没有 body，也创建一个空对象，方便 file_handler 使用 cJSON_GetObjectItem
     // cJSON *req_json = NULL;
     if (req.method == HTTP_POST && req.body_len > 0) {
@@ -250,7 +249,7 @@ void process_client_request(void *arg) {
                 json_resp_obj = (cJSON*)0x1; 
             }
             else if (strncmp(req.url, "/api/files/upload/chunk", 23) == 0 && req.method == HTTP_POST) {
-                // 注意：这里不传 req_json，而是传 &req
+                // 这里不传 req_json，而是 &req
                 handle_upload_chunk(client_fd, db, user_id, &req);
                 json_resp_obj = (cJSON*)0x1; 
             }
@@ -297,12 +296,12 @@ void process_client_request(void *arg) {
     // 9. 统一清理标签
 cleanup:
     free_http_request(&req);
-    // 这里手动释放 req_json，因为它是在函数内部 malloc/parse 的
+    // 手动释放 req_json，在函数内部 malloc/parse 的
     if (req_json) cJSON_Delete(req_json);
     free(buffer); 
     close(client_fd);
     // 释放数据库连接回池
-    // 必须保证所有退出路径上归还，否则连接池耗尽
+    // 保证所有退出路径上归还，不然连接池耗尽
     if (db) db_pool_release(g_db_pool, db);
 
 }
