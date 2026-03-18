@@ -510,7 +510,19 @@
                     headers: headers,
                     body: JSON.stringify(data)
                 });
-                return await res.json();
+                const result =  await res.json();
+                // 统一处理 Token 失效的情况
+                // 如果返回 401，说明 token 无效，自动清除并刷新页面，从而显示登录页
+                if (result.code === 401) {
+                    localStorage.removeItem('token');
+                    // 提示用户
+                    alert("登录已过期，请重新登录");
+                    // 刷新页面，重新走初始化流程
+                    location.reload(); 
+                }
+                
+                return result; // 返回结果
+
             } catch (e) {
                 console.error(e);
                 return { code: -1, msg: e.message };
