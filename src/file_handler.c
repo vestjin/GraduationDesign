@@ -79,8 +79,11 @@ static const char* get_mime_type(const char *filename) {
     const char *ext = strrchr(filename, '.');
     if (!ext) return "application/octet-stream";
     
-    if (strcasecmp(ext, ".txt") == 0 || strcasecmp(ext, ".log") == 0 || strcasecmp(ext, ".md") == 0)
-        return "text/plain";
+    // MD 文件严格遵循 UTF-8 编码，必须显式指定，否则浏览器可能误判为 GBK
+    if (strcasecmp(ext, ".md") == 0) return "text/plain; charset=utf-8";
+    // TXT 和 LOG 文件编码不确定（可能是GBK或UTF-8），去掉 charset 让浏览器自动检测，解决 Windows 记事本乱码
+    if (strcasecmp(ext, ".txt") == 0 || strcasecmp(ext, ".log") == 0) return "text/plain";
+    
     if (strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0)
         return "image/jpeg";
     if (strcasecmp(ext, ".png") == 0)
