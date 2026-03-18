@@ -80,7 +80,7 @@ static const char* get_mime_type(const char *filename) {
     if (!ext) return "application/octet-stream";
     
     if (strcasecmp(ext, ".txt") == 0 || strcasecmp(ext, ".log") == 0 || strcasecmp(ext, ".md") == 0)
-        return "text/plain; charset=utf-8";
+        return "text/plain";
     if (strcasecmp(ext, ".jpg") == 0 || strcasecmp(ext, ".jpeg") == 0)
         return "image/jpeg";
     if (strcasecmp(ext, ".png") == 0)
