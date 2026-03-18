@@ -777,22 +777,17 @@ cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json)
         return root;
     }
     long file_id = id_obj->valueint;
-
     char sql[2048];
-    char filepath_real[512]; 
+    char filepath_real[512];
     long long file_size = 0;
     int file_type = 0;
+    const char *file_md5 = NULL; // 【新增】
 
-    // 1. 查询信息
-    snprintf(sql, sizeof(sql), 
-             "SELECT file_path, file_size, file_type FROM files WHERE file_id=%ld AND user_id=%ld", 
-             file_id, user_id);
-
+    // 1. 查询信息 (增加 md5)
+    snprintf(sql, sizeof(sql), "SELECT file_path, file_size, file_type, md5 FROM files WHERE file_id=%ld AND user_id=%ld", file_id, user_id);
     MYSQL_RES *res = NULL;
-    // pthread_mutex_lock(db_lock);
     res = db_execute_query(db, sql);
-    // pthread_mutex_unlock(db_lock);
-    
+
     if (!res || mysql_num_rows(res) == 0) {
         if(res) mysql_free_result(res);
         cJSON_AddNumberToObject(root, "code", 404);
@@ -805,14 +800,13 @@ cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json)
     filepath_real[sizeof(filepath_real)-1] = '\0';
     file_size = atoll(row[1]);
     file_type = atoi(row[2]);
+    file_md5 = row[3]; // 获取 MD5
     mysql_free_result(res);
 
     // 2. 检查文件夹是否为空
     if (file_type == 1) {
         snprintf(sql, sizeof(sql), "SELECT count(*) FROM files WHERE parent_id=%ld", file_id);
-        // pthread_mutex_lock(db_lock);
         res = db_execute_query(db, sql);
-        // pthread_mutex_unlock(db_lock);
         if (res) {
             MYSQL_ROW count_row = mysql_fetch_row(res);
             if (atoi(count_row[0]) > 0) {
@@ -827,16 +821,31 @@ cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json)
 
     // 3. 删除物理文件
     if (file_type == 0) {
-        if (unlink(filepath_real) != 0) {
-            perror("Delete physical file failed");
+        int should_delete_physical = 1; // 默认删除
+
+        // 【关键修复】检查引用计数
+        if (file_md5 && strlen(file_md5) > 0) {
+            snprintf(sql, sizeof(sql), "SELECT COUNT(*) FROM files WHERE md5='%s' AND file_id != %ld", file_md5, file_id);
+            MYSQL_RES *count_res = db_execute_query(db, sql);
+            if (count_res) {
+                MYSQL_ROW count_row = mysql_fetch_row(count_res);
+                if (count_row && atoi(count_row[0]) > 0) {
+                    should_delete_physical = 0; // 还有引用，不删除物理文件
+                }
+                mysql_free_result(count_res);
+            }
+        }
+
+        if (should_delete_physical) {
+            if (unlink(filepath_real) != 0) {
+                perror("Delete physical file failed");
+            }
         }
     }
 
     // 4. 删除数据库记录
     snprintf(sql, sizeof(sql), "DELETE FROM files WHERE file_id=%ld", file_id);
-    // pthread_mutex_lock(db_lock);
     if (db_execute_update(db, sql) > 0) {
-        // pthread_mutex_unlock(db_lock);
         // 5. 扣减配额
         if (file_type == 0) {
             snprintf(sql, sizeof(sql), "UPDATE user_storage_quota SET used_quota = used_quota - %lld WHERE user_id=%ld", file_size, user_id);
@@ -845,13 +854,12 @@ cJSON* handle_file_delete(DBConnection *db, long user_id, const cJSON *req_json)
         cJSON_AddNumberToObject(root, "code", 0);
         cJSON_AddStringToObject(root, "msg", "Delete success");
     } else {
-        // pthread_mutex_unlock(db_lock);
         cJSON_AddNumberToObject(root, "code", 500);
         cJSON_AddStringToObject(root, "msg", "Database error");
     }
-
     return root;
 }
+
 
 cJSON* handle_file_move(DBConnection *db, long user_id, const cJSON *req_json) {
     cJSON *root = cJSON_CreateObject();
