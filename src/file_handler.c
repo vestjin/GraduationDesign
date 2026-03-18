@@ -464,7 +464,7 @@ void handle_upload_chunk(int client_fd, DBConnection *db, long user_id, HttpRequ
     get_url_param(req->url, "offset", offset_str);
     int offset = atoi(offset_str);
 
-    const int CHUNK_SIZE_C = 5 * 1024 * 1024;
+    // const int CHUNK_SIZE_C = 5 * 1024 * 1024;
     char filepath_real[512]; 
     char sql[2048];
 
@@ -719,7 +719,7 @@ cJSON* handle_file_rename(DBConnection *db, long user_id, const cJSON *req_json)
     const char *new_name = name_obj->valuestring;
 
     char sql[2048];
-    char current_name[512];
+    // char current_name[512];
     char esc_name[256];
     
     // 1. 查询信息
