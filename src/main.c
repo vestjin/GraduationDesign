@@ -22,12 +22,11 @@ int main() {
     // 获取cpu核心数
     int cpu_cores = sysconf(_SC_NPROCESSORS_ONLN);
     // 线程池大小 = cpu核心数 * 2
-    int thread_count = cpu_cores * 2;
+    int thread_count = cpu_cores * 4;
 
-    // 连接池大小 = 线程池大小 * 1.5，确保不成为瓶颈
-    int pool_size = thread_count + (thread_count / 2);
-    // 至少保证 16 个连接
-    pool_size = pool_size < 16 ? 16 : pool_size;
+    // 连接池大小 = 线程池大小 * 2
+    int pool_size = thread_count * 2;  // 8
+    if (pool_size < 4) pool_size = 4;
 
     printf("CPU cores: %d, Thread pool size: %d, DB pool size: %d\n", 
         cpu_cores, thread_count, pool_size);
