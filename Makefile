@@ -8,7 +8,7 @@ SRCDIR = src
 OBJDIR = obj
 LIBSDIR = libs/cJSON
 
-# --- 2. 定义所有目标文件 ---
+# --- 定义所有目标文件 ---
 # 这里将 src 下的文件和 libs 下的文件统一放入 OBJS 变量
 OBJS = $(OBJDIR)/conf.o \
        $(OBJDIR)/db_op.o \
@@ -27,15 +27,15 @@ all: directories $(TARGET)
 directories:
 	@mkdir -p $(OBJDIR) bin
 
-# --- 3. 链接规则 ---
+# --- 链接规则 ---
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) -o $@ $(MYSQL_LIBS) -lm -lpthread -lssl -lcrypto
 
-# --- 4. 编译规则 (src 目录下的 .c) ---
+# --- 编译规则 (src 目录下的 .c) ---
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	$(CC) $(CFLAGS) $(MYSQL_CFLAGS) -c $< -o $@
 
-# --- 5. 编译规则 (libs 目录下的 cJSON.c) ---
+# --- 编译规则 (libs 目录下的 cJSON.c) ---
 $(OBJDIR)/cJSON.o: $(LIBSDIR)/cJSON.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
