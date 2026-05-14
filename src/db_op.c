@@ -122,7 +122,7 @@ DBConnection* db_pool_acquire(DBPool *pool) {
     // 超时计算移至锁内（循环外），确保从“开始等待”时刻计算，避免锁竞争导致的误差
     struct timespec abs_timeout;
     clock_gettime(CLOCK_REALTIME, &abs_timeout);
-    abs_timeout.tv_sec += 10;  // 设置绝对超时时间点（当前时间 + 10秒）
+    abs_timeout.tv_sec += 30;  // 设置绝对超时时间点（当前时间 + 10秒）
     
     while (1) {
         // 遍历寻找可用连接

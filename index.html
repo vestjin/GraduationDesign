@@ -228,7 +228,7 @@
                 this.onComplete = onComplete;
                 this.onError = onError;
                 this.retryCount = 0;
-                this.maxRetries = 3; // 最大重试次数
+                this.maxRetries = 5; // 最大重试次数
                 this.fileSafeId = this.generateFileId(); // 生成唯一ID
                 // 本地存储恢复断点
                 this.loadFromStorage();

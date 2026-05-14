@@ -85,7 +85,11 @@ void process_client_request(void *arg) {
 
     // 3. 循环读取 Header
     while (total_read < BUFFER_SIZE - 1) {
-        int bytes = recv(client_fd, buffer + total_read, (BUFFER_SIZE - 1) - total_read, 0);
+        // int bytes = recv(client_fd, buffer + total_read, (BUFFER_SIZE - 1) - total_read, 0);
+        int bytes;
+        do {
+            bytes = recv(client_fd, buffer + total_read, (BUFFER_SIZE - 1) - total_read, 0);
+        } while (bytes < 0 && errno == EINTR);
         if (bytes < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // 超时了？正常来说不会 EAGAIN，因为设置了 SO_RCVTIMEO
@@ -125,7 +129,11 @@ void process_client_request(void *arg) {
         }
 
         while (total_read < total_needed) {
-            int bytes = recv(client_fd, buffer + total_read, total_needed - total_read, 0);
+            // int bytes = recv(client_fd, buffer + total_read, total_needed - total_read, 0);
+            int bytes;
+            do {
+                bytes = recv(client_fd, buffer + total_read, total_needed - total_read, 0);
+            } while (bytes < 0 && errno == EINTR);   // 被信号中断则重试
             if (bytes < 0) {
                 if (errno == EAGAIN || errno == EWOULDBLOCK) {
                      printf("Timeout reading body\n");
@@ -162,6 +170,16 @@ void process_client_request(void *arg) {
         goto cleanup;
     }
 
+    // 根据请求类型调整 Socket 超时 
+    int is_upload = (strncmp(req.url, "/api/files/upload/chunk", 23) == 0 ||
+                    strncmp(req.url, "/api/files/download", 21) == 0 ||
+                    strncmp(req.url, "/api/files/view", 16) == 0);
+    // 上传/下载/预览等大文件传输设置较长超时，其余保持 30s
+    if (set_socket_timeout(client_fd, is_upload ? 1 : 0) < 0) {
+        const char *err = "HTTP/1.1 500 Internal Server Error\r\n\r\n";
+        send(client_fd, err, strlen(err), 0);
+        goto cleanup;
+    }
     printf("[Thread %lu] Handling: %s %s\n", pthread_self(), 
            (req.method==HTTP_GET?"GET":"POST"), req.url);
 
