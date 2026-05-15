@@ -2,875 +2,703 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>Linux C Cloud Disk Pro</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 950px; margin: 20px auto; background-color: #f4f6f9; padding: 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        input, button { padding: 8px 12px; margin: 5px; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; outline: none; transition: border 0.2s; }
-        input:focus { border-color: #2196F3; }
-        button { cursor: pointer; border: none; color: white; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        button:active { transform: translateY(1px); box-shadow: none; }
-        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; border-radius: 4px; overflow: hidden; }
-        th, td { border-bottom:1px solid #eee; padding: 12px; text-align: left; }
-        th { background-color: #333; color: white; font-weight: 600; }
-        tr:nth-child(even) { background-color: #fafafa; }
-        tr:hover { background-color: #f0f7ff; }
-        .folder { color: #FF9800; font-weight: bold; cursor: pointer; }
-        .status { color: #4CAF50; font-size: 0.9em; }
-        h2 { margin-top: 0; border-bottom: 2px solid #ddd; padding-bottom: 10px; color: #333; }
-        
-        /* 任务列表样式 */
-        .upload-section { margin-top: 20px; background: white; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
-        .progress-container { background: #e0e0e0; height: 18px; width: 100%; border-radius: 9px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,0.1); }
-        .progress-bar { height: 100%; background: linear-gradient(90deg, #4CAF50, #81C784); transition: width 0.2s; text-align: center; color: white; font-size: 11px; line-height: 18px; font-weight: bold; }
-        .btn-action { cursor: pointer; padding:4px 10px; font-size: 12px; border-radius: 3px; border: none; color: white; width: 65px; box-shadow: none; margin-right: 5px;}
-        .btn-pause { background: #FF9800; }
-        .btn-resume { background: #2196F3; }
-        .btn-delete { background: #f44336; }
-        .btn-retry { background: #607D8B; }
-        .task-table th { background-color: #555; font-size: 13px; padding: 8px; }
-        .task-table td { padding: 8px; font-size: 12px; vertical-align: middle; }
-        .op-btn { margin-right: 5px; font-size: 12px; padding: 5px 10px; }
-
-        /* 移动文件 模态框样式 (简单下拉) */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 9999; /* 提高 z-index */
-        }
-        .modal-content {
-            background: white; padding: 25px; border-radius: 8px; width: 500px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom:1px solid #eee; padding-bottom: 10px; }
-        .modal-title { font-size: 18px; font-weight: bold; }
-        .close-btn { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; box-shadow: none; line-height: 1;}
-        .close-btn:hover { color: #333; box-shadow: none; }
-
-        /* 下拉选择框样式 */
-        select { 
-            width: 100%; padding: 10px; font-size: 14px; border: 1px solid #ccc; border-radius: 4px; 
-            background-color: white; outline: none; margin-bottom: 20px;
-        }
-
-        /* =========================================================== */
-        /* 将 .hidden 放到最后，并加 !important 确保生效 */
-        .hidden { display: none !important; }
-        /* =========================================================== */
-    </style>
-    <!-- 引入 SparkMD5 用于计算秒传 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+    <title>云盘 - 私人存储空间</title>
+    <!-- 引入 Element Plus 样式 + 字体 -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <!-- 引入 Vue 3, Element Plus, Axios, SparkMD5 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: #f5f7fb;
+            min-height: 100vh;
+        }
+        /* 全局滚动条美化 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+        .app-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        /* 文件列表表格样式增强 */
+        .file-table .el-table__row:hover {
+            cursor: default;
+        }
+        .folder-row {
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .folder-row .cell {
+            color: #e6a23c;
+        }
+        .file-icon {
+            margin-right: 8px;
+            font-size: 1.2em;
+            vertical-align: middle;
+        }
+        .action-buttons .el-button + .el-button {
+            margin-left: 8px;
+        }
+        .upload-task-list {
+            margin-top: 24px;
+            border-top: 1px solid #ebeef5;
+            padding-top: 16px;
+        }
+        /* 移动文件下拉菜单样式 */
+        .move-select {
+            width: 100%;
+        }
+        .navbar-breadcrumb {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .quota-info {
+            font-size: 13px;
+            color: #606266;
+        }
+    </style>
 </head>
 <body>
+    <div id="app">
+        <div class="app-container">
+            <!-- 登录界面 -->
+            <el-card v-if="!isLoggedIn" style="max-width: 450px; margin: 80px auto; padding: 20px;">
+                <h2 style="text-align: center; margin-bottom: 24px;">📁 私人云盘</h2>
+                <el-form :model="loginForm" :rules="loginRules" ref="loginFormRef">
+                    <el-form-item prop="username">
+                        <el-input v-model="loginForm.username" placeholder="用户名" prefix-icon="User" clearable></el-input>
+                    </el-form-item>
+                    <el-form-item prop="password">
+                        <el-input v-model="loginForm.password" type="password" placeholder="密码" prefix-icon="Lock" show-password></el-input>
+                    </el-form-item>
+                    <el-form-item>
+                        <el-button type="primary" @click="doLogin" style="width: 100%" :loading="loginLoading">登录</el-button>
+                        <el-button @click="doRegister" style="width: 100%; margin-top: 12px;">注册新账号</el-button>
+                    </el-form-item>
+                </el-form>
+                <div v-if="loginMsg" style="color: #f56c6c; font-size: 13px; text-align: center;">{{ loginMsg }}</div>
+            </el-card>
 
-    <!-- 登录界面 -->
-    <div id="login-view" class="hidden" style="max-width: 400px; margin: 80px auto; padding: 40px; background: white; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center;">
-        <h2 style="border:none; margin-bottom: 30px; color: #333;">网盘系统</h2>
-        <div style="margin-bottom: 20px;">
-            <input type="text" id="login-user" placeholder="用户名" style="width: 90%; display: block; margin: 0 auto;">
-        </div>
-        <div style="margin-bottom: 30px;">
-            <input type="password" id="login-pass" placeholder="密码" style="width: 90%; display: block; margin: 0 auto;">
-        </div>
-        <div>
-            <button onclick="doLogin()" style="width: 45%; background-color: #2196F3;">登录</button>
-            <button onclick="doRegister()" style="width: 45%; background-color: #4CAF50;">注册</button>
-        </div>
-        <p id="login-msg" class="status" style="text-align: center; margin-top: 20px; color: #f44336;"></p>
-    </div>
+            <!-- 主界面 -->
+            <div v-else>
+                <!-- 顶部栏 -->
+                <div class="navbar-breadcrumb">
+                    <el-breadcrumb separator="/">
+                        <el-breadcrumb-item :to="{ path: '/' }" @click="goRoot">云盘</el-breadcrumb-item>
+                        <el-breadcrumb-item v-for="(item, idx) in pathStack" :key="idx">
+                            <span v-if="idx === pathStack.length-1">{{ item.name }}</span>
+                            <a href="#" @click.prevent="navigateTo(item.id, idx)" v-else>{{ item.name }}</a>
+                        </el-breadcrumb-item>
+                    </el-breadcrumb>
+                    <div>
+                        <el-button type="danger" plain size="small" @click="logout">退出登录</el-button>
+                    </div>
+                </div>
 
-    <!-- 主界面 -->
-    <div id="main-view" class="hidden">
-        <h2>我的云盘</h2>
-        
-        <!-- 面包屑导航 -->
-        <div style="background: white; padding: 15px; margin-bottom: 20px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-            <div style="font-weight: 500; color: #333;">
-                <span>当前路径: </span>
-                <span id="current-path" style="color: #2196F3; font-weight: bold;">Root</span>
-            </div>
-            <div>
-                <button onclick="doLogout()" style="background-color: #f44336; font-size: 13px;">退出</button>
-                <button onclick="goBack()" style="background-color: #607D8B; font-size: 13px;">返回上级</button>
+                <!-- 操作栏 -->
+                <el-row :gutter="16" style="margin-bottom: 20px;">
+                    <el-col :span="6">
+                        <el-input v-model="newFolderName" placeholder="新建文件夹名称" clearable>
+                            <template #append>
+                                <el-button @click="createFolder" :loading="mkdirLoading">新建</el-button>
+                            </template>
+                        </el-input>
+                    </el-col>
+                    <el-col :span="6">
+                        <el-upload
+                            action="#"
+                            :auto-upload="false"
+                            :show-file-list="false"
+                            :multiple="true"
+                            :on-change="handleFileSelect"
+                            :before-upload="() => false"
+                            drag
+                        >
+                            <el-button type="primary" plain>📤 选择文件上传</el-button>
+                        </el-upload>
+                    </el-col>
+                    <el-col :span="6" :offset="6" style="text-align: right;">
+                        <span class="quota-info">已用空间: {{ formatSize(usedQuota) }} / {{ formatSize(totalQuota) }}</span>
+                    </el-col>
+                </el-row>
+
+                <!-- 文件列表表格 -->
+                <el-table :data="fileList" stripe border style="width: 100%" @row-dblclick="handleRowDoubleClick">
+                    <el-table-column label="名称" min-width="220">
+                        <template #default="{ row }">
+                            <span :class="row.file_type === 1 ? 'folder-row' : ''" @click="row.file_type === 1 && enterFolder(row.file_id)">
+                                <span class="file-icon">{{ row.file_type === 1 ? '📁' : getFileIcon(row.file_name) }}</span>
+                                {{ row.file_name }}
+                            </span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="大小" width="120">
+                        <template #default="{ row }">
+                            {{ row.file_type === 1 ? '—' : formatSize(row.file_size) }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="类型" width="100">
+                        <template #default="{ row }">
+                            {{ row.file_type === 1 ? '文件夹' : '文件' }}
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="280" fixed="right">
+                        <template #default="{ row }">
+                            <div class="action-buttons">
+                                <el-button v-if="row.file_type === 0" size="small" type="info" plain @click="previewFile(row.file_id, row.file_name)">预览</el-button>
+                                <el-button v-if="row.file_type === 0" size="small" type="success" plain @click="downloadFile(row.file_id, row.file_name)">下载</el-button>
+                                <el-button size="small" type="warning" plain @click="renameFile(row.file_id, row.file_name)">改名</el-button>
+                                <el-button size="small" type="primary" plain @click="openMoveModal(row.file_id)">移动</el-button>
+                                <el-button size="small" type="danger" plain @click="deleteFile(row.file_id)">删除</el-button>
+                            </div>
+                        </template>
+                    </el-table-column>
+                </el-table>
+
+                <!-- 上传任务列表 -->
+                <div class="upload-task-list">
+                    <el-divider content-position="left">上传任务</el-divider>
+                    <div v-for="task in activeTaskList" :key="task.id" style="margin-bottom: 12px;">
+                        <el-card shadow="hover">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <div style="flex: 1;">
+                                    <div><strong>{{ task.file.name }}</strong> <span style="color: #909399;">({{ formatSize(task.file.size) }})</span></div>
+                                    <el-progress :percentage="task.progress" :status="task.status === 'ERROR' ? 'exception' : (task.status === 'FINISHED' ? 'success' : '')"></el-progress>
+                                    <span style="font-size: 12px; color: #606266;">{{ task.statusText }}</span>
+                                </div>
+                                <div style="margin-left: 16px;">
+                                    <el-button v-if="task.status === 'UPLOADING'" size="small" type="warning" @click="pauseTask(task.id)">暂停</el-button>
+                                    <el-button v-if="task.status === 'PAUSED'" size="small" type="primary" @click="resumeTask(task.id)">继续</el-button>
+                                    <el-button v-if="task.status === 'ERROR'" size="small" type="danger" @click="retryTask(task.id)">重试</el-button>
+                                    <el-button v-if="task.status === 'PENDING'" size="small" disabled>等待中</el-button>
+                                </div>
+                            </div>
+                        </el-card>
+                    </div>
+                </div>
             </div>
         </div>
-        
-        <!-- 操作区 -->
-        <div class="upload-section">
-            <div style="margin-bottom: 15px;">
-                <input type="text" id="new-folder-name" placeholder="新建文件夹名称" style="width: 65%;">
-                <button onclick="doMkdir()" style="background-color: #009688;">新建文件夹</button>
-            </div>
-            
-            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-            
-            <div style="display: flex; align-items: center; background: #f9f9f9; padding: 10px; border-radius: 4px;">
-                <input type="file" id="file-input" multiple onchange="handleFileSelect(event)" style="border: 1px solid #ddd;">
-                <span style="margin-left: 15px; font-size: 13px; color: #666;">提示：支持多选并发上传</span>
-            </div>
 
-            <!-- 任务列表 -->
-            <h4 style="margin-top: 20px; margin-bottom: 10px; border-left: 4px solid #2196F3; padding-left: 10px;">上传任务列表</h4>
-            <table id="upload-task-list" class="task-table">
-                <thead>
-                    <tr>
-                        <th style="width: 30%;">文件名</th>
-                        <th style="width: 10%;">大小</th>
-                        <th style="width: 35%;">进度</th>
-                        <th style="width: 10%;">状态</th>
-                        <th style="width: 15%;">操作</th>
-                    </tr>
-                </thead>
-                <tbody id="upload-tbody">
-                    <!-- 动态生成任务 -->
-                </tbody>
-            </table>
-        </div>
-
-        <!-- 文件列表 -->
-        <h3 style="margin-top: 30px; border-left: 4px solid #4CAF50; padding-left: 10px; border-bottom: 1px solid #ddd; padding-bottom: 10px;">文件浏览</h3>
-        <table id="file-list">
-            <thead>
-                <tr>
-                    <th>名称 (悬停查看ID)</th>
-                    <th>大小</th>
-                    <th>类型</th>
-                    <th>操作</th>
-                </tr>
-            </thead>
-            <tbody id="file-tbody">
-                <!-- 文件列表动态生成 -->
-            </tbody>
-        </table>
-    </div>
-
-    <!-- 移动文件 模态框 (简单下拉) -->
-    <div id="move-modal" class="hidden modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <span class="modal-title">选择目标文件夹</span>
-                <button class="close-btn" onclick="closeMoveModal()">×</button>
-            </div>
-            
-            <div style="margin-bottom: 15px;">
-                <p style="font-size: 13px; color: #666; margin-top: 0;">请在下拉列表中选择目标位置：</p>
-                <select id="move-folder-select">
-                    <option value="0" selected>📂 根目录</option>
-                    <!-- JS 会动态填充其他文件夹到这里 -->
-                </select>
-            </div>
-
-            <div style="text-align: right; border-top: 1px solid #eee; padding-top: 15px;">
-                <button onclick="closeMoveModal()" style="background-color: #999;">取消</button>
-                <button onclick="confirmMove()" style="background-color: #2196F3;">确认移动</button>
-            </div>
-        </div>
+        <!-- 移动文件对话框 -->
+        <el-dialog v-model="moveDialogVisible" title="移动文件到" width="30%">
+            <el-select v-model="targetParentId" placeholder="请选择目标文件夹" class="move-select">
+                <el-option label="根目录" :value="0"></el-option>
+                <el-option v-for="folder in allFolders" :key="folder.file_id" :label="folder.file_name" :value="folder.file_id"></el-option>
+            </el-select>
+            <template #footer>
+                <el-button @click="moveDialogVisible = false">取消</el-button>
+                <el-button type="primary" @click="confirmMove" :loading="moveLoading">确认移动</el-button>
+            </template>
+        </el-dialog>
     </div>
 
     <script>
+        const { createApp, ref, reactive, computed, onMounted } = Vue;
+
         // 配置
-        const CHUNK_SIZE =5 * 1024 * 1024; // 5MB 分片
-        const API_BASE = 'http://192.168.2.131:8080';
-        const MAX_CONCURRENT_UPLOADS = 3; // 最大并发上传数
-        let token = localStorage.getItem('token');
-        let currentParentId = 0;
-        let pathStack = [{id: 0, name: 'Root'}];
-        let fileToMoveId = null;
+        const API_BASE = 'http://192.168.2.131:8080';  // 请根据实际后端地址修改
+        const CHUNK_SIZE = 5 * 1024 * 1024;   // 5MB
+        const MAX_CONCURRENT_UPLOADS = 3;
 
-        // ---------------------------------------------------------
-        // 并发控制器
-        // ---------------------------------------------------------
-        class UploadQueue {
-            constructor(maxConcurrent) {
-                this.maxConcurrent = maxConcurrent;
-                this.running = 0;
-                this.queue = [];
-            }
-
-            add(task) {
-                this.queue.push(task);
-                this.runNext();
-            }
-
-            runNext() {
-                while (this.running < this.maxConcurrent && this.queue.length > 0) {
-                    const task = this.queue.shift();
-                    this.running++;
-                    task.start().finally(() => {
-                        this.running--;
-                        this.runNext();
-                    });
-                }
-            }
-
-            getStats() {
-                return {
-                    running: this.running,
-                    waiting: this.queue.length,
-                    total: this.running + this.queue.length
+        createApp({
+            setup() {
+                // 登录状态
+                const isLoggedIn = ref(!!localStorage.getItem('token'));
+                const loginForm = reactive({ username: '', password: '' });
+                const loginRules = {
+                    username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+                    password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
                 };
-            }
-        }
-
-        const uploadQueue = new UploadQueue(MAX_CONCURRENT_UPLOADS);
-            // 使用 Map 管理活跃任务，支持快速查询和清理
-        const activeTasks = new Map(); // key: fileSafeId, value: UploadTask
-        // const uploadTasks = [];
-        // ---------------------------------------------------------
-        // 任务管理器核心类
-        // ---------------------------------------------------------
-        class UploadTask {
-            constructor(file, onComplete, onError) {
-                this.file = file;
-                this.status = 'PENDING'; 
-                this.progress = 0; 
-                this.offset = 0;
-                this.md5 = null;
-                this.controller = null; 
-                this.onComplete = onComplete;
-                this.onError = onError;
-                this.retryCount = 0;
-                this.maxRetries = 5; // 最大重试次数
-                this.fileSafeId = this.generateFileId(); // 生成唯一ID
-                // 本地存储恢复断点
-                this.loadFromStorage();
-            }
-            // 生成唯一文件标识（文件名+大小+最后修改时间）
-            generateFileId() {
-                // 使用文件名、大小和最后修改时间生成唯一标识
-                return `${this.file.name}_${this.file.size}_${this.file.lastModified}`.replace(/\W/g, '_');
-            }
-            // 从本地存储加载断点
-            loadFromStorage() {
-                const savedData = localStorage.getItem(`upload_task_${this.fileSafeId}`);
-                if (savedData) {
-                    const data = JSON.parse(savedData);
-                    if (data.md5 && data.offset > 0) {
-                        this.md5 = data.md5;
-                        this.offset = data.offset;
-                        this.progress = Math.floor((this.offset / this.file.size) * 100);
-                        console.log(`恢复断点: ${this.offset}字节 (${this.progress}%)`);
-                    }
-                }
-            }
-
-            // 保存断点到本地存储
-            saveToStorage() {
-                const data = {
-                    md5: this.md5,
-                    offset: this.offset,
-                    fileSize: this.file.size,
-                    fileName: this.file.name,
-                    lastModified: this.file.lastModified,
-                    timestamp: Date.now()
-                };
-                localStorage.setItem(`upload_task_${this.fileSafeId}`, JSON.stringify(data));
-            }
-
-            // 清除本地存储
-            clearStorage() {
-                localStorage.removeItem(`upload_task_${this.fileSafeId}`);
-            }
-
-            async start() {
-                if (this.status === 'UPLOADING' || this.status === 'FINISHED') return;
+                const loginLoading = ref(false);
+                const loginMsg = ref('');
                 
-                this.status = 'UPLOADING';
-                this.controller = new AbortController();
-                this.updateUI();
-
-                try {
-                    if (!this.md5) {
-                        this.updateStatus('计算MD5...');
-                        this.md5 = await this.calcMD5();
+                // 主数据
+                const currentParentId = ref(0);
+                const pathStack = ref([{ id: 0, name: '根目录' }]);
+                const fileList = ref([]);
+                const newFolderName = ref('');
+                const mkdirLoading = ref(false);
+                const usedQuota = ref(0);
+                const totalQuota = ref(5 * 1024 * 1024 * 1024);  // 默认5GB，后续可从接口获取
+                
+                // 上传任务
+                const activeTasks = ref(new Map());  // id -> task对象
+                
+                // 移动文件
+                const moveDialogVisible = ref(false);
+                const moveFileId = ref(null);
+                const targetParentId = ref(0);
+                const moveLoading = ref(false);
+                const allFolders = ref([]);
+                
+                // 辅助函数
+                const formatSize = (bytes) => {
+                    if (bytes === 0) return '0 B';
+                    const k = 1024;
+                    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+                    const i = Math.floor(Math.log(bytes) / Math.log(k));
+                    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+                };
+                
+                const getFileIcon = (filename) => {
+                    const ext = filename.split('.').pop().toLowerCase();
+                    if (['jpg','jpeg','png','gif','bmp'].includes(ext)) return '🖼️';
+                    if (['mp4','mkv','avi','mov'].includes(ext)) return '🎬';
+                    if (['mp3','wav','flac'].includes(ext)) return '🎵';
+                    if (['pdf'].includes(ext)) return '📄';
+                    if (['doc','docx'].includes(ext)) return '📃';
+                    if (['xls','xlsx'].includes(ext)) return '📊';
+                    if (['zip','rar','7z'].includes(ext)) return '🗜️';
+                    return '📄';
+                };
+                
+                // API 请求封装
+                const api = async (url, data) => {
+                    const headers = { 'Content-Type': 'application/json' };
+                    const token = localStorage.getItem('token');
+                    if (token) headers['Token'] = token;
+                    try {
+                        const res = await axios.post(API_BASE + url, data, { headers });
+                        if (res.data.code === 401) {
+                            localStorage.removeItem('token');
+                            isLoggedIn.value = false;
+                            ElMessage.error('登录已过期，请重新登录');
+                            setTimeout(() => location.reload(), 1500);
+                            throw new Error('Unauthorized');
+                        }
+                        return res.data;
+                    } catch (e) {
+                        console.error(e);
+                        throw e;
                     }
-                    this.updateStatus('检查上传状态...');
-                    const checkRes = await this.checkUpload(this.md5);
-                    
-                    if (checkRes.status === 'instant') {
-                        this.finish();
-                        return;
+                };
+                
+                // 加载文件列表
+                const loadFiles = async () => {
+                    try {
+                        const res = await api('/api/files/list', { parent_id: currentParentId.value });
+                        if (res.code === 0) fileList.value = res.data;
+                        else ElMessage.error(res.msg || '加载失败');
+                    } catch (e) {
+                        ElMessage.error('网络错误');
                     }
-
-                    // this.offset = checkRes.offset || 0;
-                    const serverOffset = checkRes.offset || 0;
-                    this.offset = Math.max(this.offset, serverOffset);
-                    // this.offset = Math.max(this.offset, checkRes.offset || 0);
-                    // 立即保存断点信息，确保在上传过程中随时可以恢复
-                    this.saveToStorage();
+                };
+                
+                // 获取所有文件夹（用于移动）
+                const loadAllFolders = async () => {
+                    try {
+                        const res = await api('/api/files/list', { fetch_all: 1 });
+                        if (res.code === 0) {
+                            allFolders.value = res.data.filter(item => item.file_type === 1);
+                        }
+                    } catch (e) {}
+                };
+                
+                // 导航
+                const navigateTo = (id, idx) => {
+                    pathStack.value = pathStack.value.slice(0, idx + 1);
+                    currentParentId.value = id;
+                    loadFiles();
+                };
+                const goRoot = () => {
+                    pathStack.value = [{ id: 0, name: '根目录' }];
+                    currentParentId.value = 0;
+                    loadFiles();
+                };
+                const enterFolder = (id, name) => {
+                    pathStack.value.push({ id, name });
+                    currentParentId.value = id;
+                    loadFiles();
+                };
+                const handleRowDoubleClick = (row) => {
+                    if (row.file_type === 1) enterFolder(row.file_id, row.file_name);
+                };
+                
+                // 新建文件夹
+                const createFolder = async () => {
+                    if (!newFolderName.value.trim()) return ElMessage.warning('请输入文件夹名称');
+                    mkdirLoading.value = true;
+                    try {
+                        const res = await api('/api/files/mkdir', { parent_id: currentParentId.value, folder_name: newFolderName.value });
+                        if (res.code === 0) {
+                            ElMessage.success('创建成功');
+                            newFolderName.value = '';
+                            loadFiles();
+                        } else ElMessage.error(res.msg);
+                    } finally { mkdirLoading.value = false; }
+                };
+                
+                // 重命名
+                const renameFile = async (fileId, oldName) => {
+                    const newName = prompt('请输入新名称', oldName);
+                    if (!newName || newName === oldName) return;
+                    const res = await api('/api/files/rename', { file_id: fileId, new_name: newName });
+                    if (res.code === 0) { ElMessage.success('重命名成功'); loadFiles(); }
+                    else ElMessage.error(res.msg);
+                };
+                
+                // 删除
+                const deleteFile = async (fileId) => {
+                    await ElMessageBox.confirm('确定删除吗？文件夹必须为空才能删除。', '提示', { type: 'warning' });
+                    const res = await api('/api/files/delete', { file_id: fileId });
+                    if (res.code === 0) { ElMessage.success('删除成功'); loadFiles(); }
+                    else ElMessage.error(res.msg);
+                };
+                
+                // 下载
+                const downloadFile = async (fileId, fileName) => {
+                    try {
+                        const token = localStorage.getItem('token');
+                        const response = await axios.post(API_BASE + '/api/files/download', { file_id: fileId }, {
+                            headers: { 'Token': token, 'Content-Type': 'application/json' },
+                            responseType: 'blob'
+                        });
+                        const url = window.URL.createObjectURL(new Blob([response.data]));
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', fileName);
+                        document.body.appendChild(link);
+                        link.click();
+                        link.remove();
+                        window.URL.revokeObjectURL(url);
+                    } catch (e) {
+                        ElMessage.error('下载失败');
+                    }
+                };
+                
+                // 预览：直接打开新窗口
+                const previewFile = (fileId, fileName) => {
+                    const token = localStorage.getItem('token');
+                    const url = `${API_BASE}/api/files/view?file_id=${fileId}&token=${token}`;
+                    window.open(url, '_blank');
+                };
+                
+                // 移动文件
+                const openMoveModal = async (fileId) => {
+                    moveFileId.value = fileId;
+                    await loadAllFolders();
+                    moveDialogVisible.value = true;
+                    targetParentId.value = 0;
+                };
+                const confirmMove = async () => {
+                    moveLoading.value = true;
+                    try {
+                        const res = await api('/api/files/move', { file_id: moveFileId.value, target_parent_id: targetParentId.value });
+                        if (res.code === 0) { ElMessage.success('移动成功'); moveDialogVisible.value = false; loadFiles(); }
+                        else ElMessage.error(res.msg);
+                    } finally { moveLoading.value = false; }
+                };
+                
+                // 上传任务类 (简化版)
+                class UploadTask {
+                    constructor(file, onComplete, onError) {
+                        this.file = file;
+                        this.id = `${file.name}_${file.size}_${file.lastModified}`.replace(/\W/g, '_');
+                        this.status = 'PENDING';   // PENDING, UPLOADING, PAUSED, FINISHED, ERROR
+                        this.progress = 0;
+                        this.offset = 0;
+                        this.md5 = null;
+                        this.controller = null;
+                        this.onComplete = onComplete;
+                        this.onError = onError;
+                        this.retryCount = 0;
+                        this.statusText = '等待中';
+                        // 尝试加载本地断点
+                        this.loadFromStorage();
+                    }
                     
-                    const totalSize = this.file.size;
-
-                    while (this.offset < totalSize && this.status === 'UPLOADING') {
-                        const end = Math.min(this.offset + CHUNK_SIZE, totalSize);
-                        const chunk = this.file.slice(this.offset, end);
-                        
-                        // 添加重试机制
-                        let success = false;
-                        for (let attempt = 0; attempt < this.maxRetries && !success; attempt++) {
-                            try {
-                                await this.uploadChunk(this.md5, this.offset, chunk);
-                                success = true;
-                            } catch (error) {
-                                if (attempt === this.maxRetries - 1) {
-                                    throw error; // 最后一次重试失败，抛出异常
-                                }
-                                console.warn(`分片上传失败，重试 ${attempt + 1}/${this.maxRetries}`);
-                                await this.delay(1000 * (attempt + 1)); // 指数退避
+                    loadFromStorage() {
+                        const saved = localStorage.getItem(`upload_${this.id}`);
+                        if (saved) {
+                            const data = JSON.parse(saved);
+                            if (data.md5 && data.offset > 0) {
+                                this.md5 = data.md5;
+                                this.offset = data.offset;
+                                this.progress = Math.floor((this.offset / this.file.size) * 100);
                             }
                         }
-                        
-                        // 使用服务端返回的真实偏移量更新本地状态
-                        // 不再使用 this.offset = end (乐观更新)
-                        const confirmedOffset = await this.uploadChunk(this.md5, this.offset, chunk);
-                        // 只有当服务端确认的偏移量大于本地时才更新（防止回退）
-                        if (confirmedOffset > this.offset) {
-                            this.offset = confirmedOffset;
-                        } else {
-                            // 如果服务端返回的偏移量没变或异常，强制推进避免死循环，但打印警告
-                            console.warn("Server offset mismatch or not advanced. Local: ", this.offset, "Server: ", confirmedOffset);
-                            this.offset = end; 
+                    }
+                    saveToStorage() {
+                        if (this.md5 && this.offset > 0) {
+                            localStorage.setItem(`upload_${this.id}`, JSON.stringify({ md5: this.md5, offset: this.offset, timestamp: Date.now() }));
                         }
-                        
-                        this.progress = Math.floor((this.offset / totalSize) * 100);
-                        // 每次成功上传一个分片后，立即保存断点信息
-                        this.saveToStorage();
+                    }
+                    clearStorage() {
+                        localStorage.removeItem(`upload_${this.id}`);
+                    }
+                    
+                    async start() {
+                        if (this.status !== 'PENDING' && this.status !== 'PAUSED' && this.status !== 'ERROR') return;
+                        this.status = 'UPLOADING';
+                        this.statusText = '上传中...';
+                        this.controller = new AbortController();
                         this.updateUI();
+                        try {
+                            if (!this.md5) {
+                                this.statusText = '计算MD5...';
+                                this.updateUI();
+                                this.md5 = await this.calcMD5();
+                            }
+                            this.statusText = '检查上传状态...';
+                            this.updateUI();
+                            const checkRes = await this.checkUpload();
+                            if (checkRes.status === 'instant') {
+                                this.finish();
+                                return;
+                            }
+                            const serverOffset = checkRes.offset || 0;
+                            this.offset = Math.max(this.offset, serverOffset);
+                            this.saveToStorage();
+                            const totalSize = this.file.size;
+                            while (this.offset < totalSize && this.status === 'UPLOADING') {
+                                const end = Math.min(this.offset + CHUNK_SIZE, totalSize);
+                                const chunk = this.file.slice(this.offset, end);
+                                const confirmedOffset = await this.uploadChunk(this.md5, this.offset, chunk);
+                                if (confirmedOffset > this.offset) this.offset = confirmedOffset;
+                                else this.offset = end;
+                                this.progress = Math.floor((this.offset / totalSize) * 100);
+                                this.saveToStorage();
+                                this.updateUI();
+                            }
+                            if (this.status === 'UPLOADING') {
+                                this.statusText = '完成上传...';
+                                this.updateUI();
+                                await this.completeUpload();
+                                this.finish();
+                            }
+                        } catch (error) {
+                            if (error.name === 'AbortError') {
+                                this.status = 'PAUSED';
+                                this.statusText = `已暂停 ${(this.offset/1024/1024).toFixed(1)}MB`;
+                                this.saveToStorage();
+                            } else {
+                                console.error(error);
+                                this.status = 'ERROR';
+                                this.statusText = '上传失败';
+                                this.retryCount++;
+                                if (this.retryCount < 3) {
+                                    setTimeout(() => this.start(), 2000);
+                                } else {
+                                    this.onError(this);
+                                }
+                            }
+                            this.updateUI();
+                        }
                     }
-
-                    if (this.status === 'UPLOADING') {
-                        this.updateStatus('完成上传，正在合并...');
-                        await this.completeUpload(this.md5);
-                        this.finish();
+                    
+                    async calcMD5() {
+                        return new Promise((resolve) => {
+                            const spark = new SparkMD5.ArrayBuffer();
+                            const reader = new FileReader();
+                            let chunkIndex = 0;
+                            const chunkSize = 5 * 1024 * 1024;
+                            const chunks = Math.ceil(this.file.size / chunkSize);
+                            const loadNext = () => {
+                                const start = chunkIndex * chunkSize;
+                                const end = Math.min(start + chunkSize, this.file.size);
+                                reader.readAsArrayBuffer(this.file.slice(start, end));
+                            };
+                            reader.onload = e => {
+                                spark.append(e.target.result);
+                                chunkIndex++;
+                                if (chunkIndex < chunks) setTimeout(loadNext, 0);
+                                else resolve(spark.end());
+                            };
+                            loadNext();
+                        });
                     }
-
-                } catch (error) {
-                    console.error('上传出错:', error);
-                    if (error.name === 'AbortError') {
-                        this.status = 'PAUSED'; 
-                        this.saveToStorage(); // 暂停时也保存当前进度
-                    } else {
-                        // console.error(error);
-                        this.status = 'ERROR';
-                        this.retryCount++;
-                        if (this.retryCount < this.maxRetries) {
-                            console.log(`自动重试 ${this.retryCount}/${this.maxRetries}`);
+                    
+                    async checkUpload() {
+                        const res = await api('/api/files/upload/check', {
+                            md5: this.md5,
+                            file_size: this.file.size,
+                            file_name: this.file.name,
+                            parent_id: currentParentId.value
+                        });
+                        if (res.code !== 0) throw new Error(res.msg);
+                        return { status: res.data.status, offset: res.data.offset };
+                    }
+                    
+                    async uploadChunk(md5, offset, chunk) {
+                        const url = `${API_BASE}/api/files/upload/chunk?md5=${md5}&offset=${offset}`;
+                        const token = localStorage.getItem('token');
+                        const response = await axios.post(url, chunk, {
+                            headers: { 'Token': token, 'Content-Type': 'application/octet-stream' },
+                            signal: this.controller.signal
+                        });
+                        if (response.data.code === 0 && response.data.data && response.data.data.offset !== undefined)
+                            return response.data.data.offset;
+                        return offset + chunk.size;
+                    }
+                    
+                    async completeUpload() {
+                        await api('/api/files/upload/complete', {
+                            md5: this.md5,
+                            file_name: this.file.name,
+                            parent_id: currentParentId.value
+                        });
+                    }
+                    
+                    finish() {
+                        this.status = 'FINISHED';
+                        this.progress = 100;
+                        this.statusText = '已完成';
+                        this.clearStorage();
+                        this.updateUI();
+                        this.onComplete(this);
+                        setTimeout(() => {
+                            if (activeTasks.value.has(this.id)) activeTasks.value.delete(this.id);
+                        }, 3000);
+                    }
+                    
+                    updateUI() {
+                        const tasksMap = activeTasks.value;
+                        // 触发响应式更新
+                        tasksMap.set(this.id, this);
+                        activeTasks.value = new Map(tasksMap);
+                    }
+                    
+                    pause() {
+                        if (this.status === 'UPLOADING' && this.controller) {
+                            this.controller.abort();
+                        }
+                    }
+                    
+                    resume() {
+                        if (this.status === 'PAUSED') {
+                            this.start();
+                        }
+                    }
+                    
+                    retry() {
+                        if (this.status === 'ERROR') {
+                            this.retryCount = 0;
                             this.status = 'PENDING';
-                            uploadQueue.add(this); // 重新加入队列
-                            return; // 不调用 onError
+                            this.statusText = '等待重试';
+                            this.updateUI();
+                            this.start();
                         }
-                        this.onError(this);
                     }
-                    this.updateUI();
                 }
-            }
-
-            
-            delay(ms) {
-                return new Promise(resolve => setTimeout(resolve, ms));
-            }
-            updateStatus(text) {
-                const row = document.getElementById(`task-${this.fileSafeId}`);
-                if (row) {
-                    const statusText = row.querySelector('.status-text');
-                    if (statusText) statusText.innerText = text;
-                }
-            }
-
-            pause() {
-                if (this.status === 'UPLOADING' && this.controller) {
-                    this.controller.abort();
-                    this.status = 'PAUSED';
-                    this.updateUI();
-                }
-            }
-
-            async calcMD5() {
-                return new Promise((resolve) => {
-                    const spark = new SparkMD5.ArrayBuffer();
-                    const reader = new FileReader();
-                    let currentChunk = 0;
-                    const readChunkSize = 5 * 1024 * 1024; 
-                    const chunks = Math.ceil(this.file.size / readChunkSize);
-                    
-                    const loadNext = () => {
-                        const start = currentChunk * readChunkSize;
-                        const end = Math.min(start + readChunkSize, this.file.size);
-                        reader.readAsArrayBuffer(this.file.slice(start, end));
-                    };
-
-                    reader.onload = e => {
-                        spark.append(e.target.result);
-                        currentChunk++;
-                        if (currentChunk < chunks) {
-                            setTimeout(loadNext, 0); 
+                
+                const activeTaskList = computed(() => Array.from(activeTasks.value.values()).filter(t => t.status !== 'FINISHED'));
+                
+                // 并发上传队列
+                let runningUploads = 0;
+                const uploadQueue = [];
+                const processQueue = () => {
+                    while (runningUploads < MAX_CONCURRENT_UPLOADS && uploadQueue.length) {
+                        const task = uploadQueue.shift();
+                        runningUploads++;
+                        task.start().finally(() => {
+                            runningUploads--;
+                            processQueue();
+                        });
+                    }
+                };
+                const addUploadTask = (task) => {
+                    activeTasks.value.set(task.id, task);
+                    uploadQueue.push(task);
+                    processQueue();
+                };
+                
+                const handleFileSelect = (file) => {
+                    const task = new UploadTask(file.raw, 
+                        () => { loadFiles(); },
+                        () => { ElMessage.error(`上传失败: ${file.name}`); }
+                    );
+                    addUploadTask(task);
+                };
+                
+                const pauseTask = (id) => {
+                    const task = activeTasks.value.get(id);
+                    if (task) task.pause();
+                };
+                const resumeTask = (id) => {
+                    const task = activeTasks.value.get(id);
+                    if (task) task.resume();
+                };
+                const retryTask = (id) => {
+                    const task = activeTasks.value.get(id);
+                    if (task) task.retry();
+                };
+                
+                // 登录注册
+                const doLogin = async () => {
+                    loginLoading.value = true;
+                    try {
+                        const res = await axios.post(API_BASE + '/api/user/login', { username: loginForm.username, password: loginForm.password });
+                        if (res.data.code === 0) {
+                            localStorage.setItem('token', res.data.data.token);
+                            isLoggedIn.value = true;
+                            ElMessage.success('登录成功');
+                            loadFiles();
                         } else {
-                            resolve(spark.end());
+                            loginMsg.value = res.data.msg;
                         }
-                    };
-                    loadNext();
-                });
-            }
-
-            async checkUpload(md5) {
-                const res = await api('/api/files/upload/check', {
-                    md5: md5,
-                    file_size: this.file.size,
-                    file_name: this.file.name,
-                    parent_id: currentParentId
-                });
-                
-                const data = res.data;
-                if (data.status === 'instant') {
-                    this.status = 'FINISHED';
-                    this.progress = 100;
-                    this.updateUI();
-                    this.onComplete(this);
-                    return { status: 'instant' };
-                }
-                return { status: data.status, offset: data.offset };
-            }
-
-            async uploadChunk(md5, offset, chunk) {
-                const url = `${API_BASE}/api/files/upload/chunk?md5=${md5}&offset=${offset}`;
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Token': token },
-                    body: chunk,
-                    signal: this.controller.signal
-                });
-                if (!response.ok) throw new Error('Upload failed');
-                
-                // 解析服务端返回的真实偏移量，防止进度条跳动
-                try {
-                    const result = await response.json();
-                    if (result.code === 0 && result.data && result.data.offset !== undefined) {
-                        return result.data.offset; // 返回真实的偏移量
-                    }
-                } catch (e) {
-                    console.error("Parse chunk response error", e);
-                }
-                return offset + chunk.size; // 降级处理
-            }
-
-            async completeUpload(md5) {
-                await api('/api/files/upload/complete', {
-                    md5: md5,
-                    file_name: this.file.name,
-                    parent_id: currentParentId
-                });
-            }
-
-            finish() {
-                this.status = 'FINISHED';
-                this.progress = 100;
-                this.updateUI();
-                this.clearStorage(); // 上传完成后清除本地存储的断点信息
-                this.onComplete(this);
-            }
-
-            updateUI() {
-                const row = document.getElementById(`task-${this.fileSafeId}`);
-                if (!row) return;
-
-                const progressBar = row.querySelector('.progress-bar');
-                const statusText = row.querySelector('.status-text');
-                const btnAction = row.querySelector('.btn-action');
-
-                progressBar.style.width = `${this.progress}%`;
-                progressBar.innerText = this.progress < 10 ? '' : `${this.progress}%`;
-                
-                if (this.status === 'UPLOADING') {
-                    statusText.innerText = '上传中';
-                    btnAction.innerText = '暂停';
-                    btnAction.onclick = () => this.pause();
-                    btnAction.className = 'btn-action btn-pause';
-                } else if (this.status === 'PAUSED') {
-                    statusText.innerText = `暂停 (${(this.offset/1024/1024).toFixed(1)}MB)`;
-                    btnAction.innerText = '继续';
-                    btnAction.onclick = () => this.start();
-                    btnAction.className = 'btn-action btn-resume';
-                } else if (this.status === 'FINISHED') {
-                    statusText.innerText = '完成';
-                    row.remove(); // 直接移除完成的任务行
-                } else if (this.status === 'ERROR') {
-                    statusText.innerText = '失败';
-                    btnAction.innerText = '重试';
-                    btnAction.onclick = () => {
-                        this.retryCount = 0;
-                        uploadQueue.add(this);
-                    };
-                    btnAction.className = 'btn-action btn-retry';
-                }
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 基础 API 功能
-        // ---------------------------------------------------------
-        
-        const uploadTasks = [];
-
-        if (token) {
-            showMain();
-            loadFiles();
-        } else {
-            document.getElementById('login-view').classList.remove('hidden');
-        }
-
-        async function api(url, data) {
-            const headers = {
-                'Content-Type': 'application/json'
-            };
-            if (token) headers['Token'] = token;
-
-            try {
-                const res = await fetch(API_BASE + url, {
-                    method: 'POST',
-                    headers: headers,
-                    body: JSON.stringify(data)
-                });
-                const result =  await res.json();
-                // 统一处理 Token 失效的情况
-                // 如果返回 401，说明 token 无效，自动清除并刷新页面，从而显示登录页
-                if (result.code === 401) {
+                    } catch (e) { loginMsg.value = '网络错误'; }
+                    finally { loginLoading.value = false; }
+                };
+                const doRegister = async () => {
+                    try {
+                        const res = await axios.post(API_BASE + '/api/user/register', { username: loginForm.username, password: loginForm.password });
+                        if (res.data.code === 0) {
+                            ElMessage.success('注册成功，请登录');
+                        } else {
+                            ElMessage.error(res.data.msg);
+                        }
+                    } catch (e) { ElMessage.error('注册失败'); }
+                };
+                const logout = () => {
                     localStorage.removeItem('token');
-                    // 提示用户
-                    alert("登录已过期，请重新登录");
-                    // 刷新页面，重新走初始化流程
-                    location.reload(); 
-                }
+                    isLoggedIn.value = false;
+                    pathStack.value = [{ id: 0, name: '根目录' }];
+                    currentParentId.value = 0;
+                    ElMessage.info('已退出登录');
+                };
                 
-                return result; // 返回结果
-
-            } catch (e) {
-                console.error(e);
-                return { code: -1, msg: e.message };
-            }
-        }
-
-        function showMain() {
-            document.getElementById('login-view').classList.add('hidden');
-            document.getElementById('main-view').classList.remove('hidden');
-        }
-
-        async function doLogin() {
-            const u = document.getElementById('login-user').value;
-            const p = document.getElementById('login-pass').value;
-            const res = await api('/api/user/login', { username: u, password: p });
-            if (res.code === 0) {
-                token = res.data.token;
-                localStorage.setItem('token', token);
-                showMain();
-                loadFiles();
-            } else {
-                document.getElementById('login-msg').innerText = res.msg;
-            }
-        }
-
-        async function doRegister() {
-            const u = document.getElementById('login-user').value;
-            const p = document.getElementById('login-pass').value;
-            const res = await api('/api/user/register', { username: u, password: p });
-            alert(res.msg);
-            if (res.code === 0) alert('注册成功，请登录');
-        }
-
-        async function doLogout() {
-            localStorage.removeItem('token');
-            location.reload();
-        }
-
-        async function loadFiles() {
-            const res = await api('/api/files/list', { parent_id: currentParentId });
-            const tbody = document.getElementById('file-tbody');
-            tbody.innerHTML = '';
-            
-            if (res.code === 0) {
-                res.data.forEach(f => {
-                    const tr = document.createElement('tr');
-                    const isFolder = f.file_type ===1;
-                    
-                    let sizeStr = f.file_size + ' B';
-                    if (f.file_size > 1024*1024*1024) sizeStr = (f.file_size/1024/1024/1024).toFixed(2) + ' GB';
-                    else if(f.file_size > 1024*1024) sizeStr = (f.file_size/1024/1024).toFixed(2) + ' MB';
-                    else if(f.file_size > 1024) sizeStr = (f.file_size/1024).toFixed(2) + ' KB';
-
-                    // 预览按钮逻辑
-                    const ext = f.file_name.split('.').pop().toLowerCase();
-                    const previewExts = ['txt', 'log', 'md', 'jpg', 'jpeg', 'png', 'gif', 'pdf'];
-                    const canPreview = !isFolder && previewExts.includes(ext);
-                    
-                    let previewBtn = '';
-                    if (canPreview) {
-                        // 构建 GET 请求 URL，携带 token
-                        const viewUrl = `${API_BASE}/api/files/view?file_id=${f.file_id}&token=${token}`;
-                        previewBtn = `<button onclick="window.open('${viewUrl}', '_blank')" class="op-btn" style="background-color: #9c27b0;">预览</button>`;
-                    }
-
-                    tr.innerHTML = `
-                        <td class="${isFolder ? 'folder' : ''}" 
-                            title="ID: ${f.file_id}"
-                            onclick="${isFolder ? `enterFolder(${f.file_id},'${f.file_name}')` : ''}">
-                            ${isFolder ? '[DIR] ' : ''}${f.file_name}
-                        </td>
-                        <td>${sizeStr}</td>
-                        <td>${isFolder ? '文件夹' : '文件'}</td>
-                        <td>
-                            ${previewBtn}
-                            ${!isFolder ? `<button onclick="downloadFile(${f.file_id}, '${f.file_name}')" class="op-btn" style="background-color: #4CAF50;">下载</button>` : ''}
-                            <button onclick="doRename(${f.file_id}, '${f.file_name}')" class="op-btn" style="background-color: #FF9800;">改名</button>
-                            <button onclick="openMoveModal(${f.file_id})" class="op-btn" style="background-color: #2196F3;">移动</button>
-                            <button onclick="doDelete(${f.file_id})" class="op-btn" style="background-color: #f44336;">删除</button>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
-            }
-        }
-
-        function enterFolder(id, name) {
-            pathStack.push({id: id, name: name});
-            currentParentId = id;
-            updatePath();
-            loadFiles();
-        }
-
-        function goBack() {
-            if (pathStack.length > 1) {
-                pathStack.pop();
-                currentParentId = pathStack[pathStack.length-1].id;
-                updatePath();
-                loadFiles();
-            }
-        }
-
-        function updatePath() {
-            const path = pathStack.map(p => p.name).join(' / ');
-            document.getElementById('current-path').innerText = path;
-        }
-
-        async function doMkdir() {
-            const name = document.getElementById('new-folder-name').value;
-            if (!name) return;
-            const res = await api('/api/files/mkdir', { parent_id: currentParentId, folder_name: name });
-            alert(res.msg);
-            if (res.code === 0) {
-                document.getElementById('new-folder-name').value = '';
-                loadFiles();
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 文件操作逻辑 (改名/移动/删除)
-        // ---------------------------------------------------------
-
-        async function doRename(fileId, oldName) {
-            const newName = prompt("请输入新名称:", oldName);
-            if (!newName || newName === oldName) return;
-
-            const res = await api('/api/files/rename', { file_id: fileId, new_name: newName });
-            alert(res.msg);
-            if (res.code === 0) loadFiles();
-        }
-
-        async function doDelete(fileId) {
-            if (!confirm("确定要删除吗？如果是文件夹，必须为空才能删除。")) return;
-
-            const res = await api('/api/files/delete', { file_id: fileId });
-            alert(res.msg);
-            if (res.code === 0) loadFiles();
-        }
-
-        async function downloadFile(id, name) {
-            const headers = { 'Token': token, 'Content-Type': 'application/json' };
-            const res = await fetch(API_BASE + '/api/files/download', {
-                method: 'POST',
-                headers: headers,
-                body: JSON.stringify({ file_id: id })
-            });
-
-            if (res.ok) {
-                const blob = await res.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = name;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-            } else {
-                alert("下载失败: " + res.statusText);
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 文件移动逻辑 (下拉列表)
-        // ---------------------------------------------------------
-
-        async function openMoveModal(fileId) {
-            fileToMoveId = fileId;
-            // 先移除 hidden 类，显示弹窗
-            const modal = document.getElementById('move-modal');
-            modal.classList.remove('hidden');
-
-            // 重置 Select 内容
-            const select = document.getElementById('move-folder-select');
-            select.innerHTML = '<option value="0" selected>📂 根目录</option>';
-
-            // 异步加载其他文件夹
-            try {
-                const res = await api('/api/files/list', { fetch_all: 1 });
-                if (res.code !== 0) {
-                    alert('加载目录失败');
-                    closeMoveModal();
-                    return;
-                }
-
-                // 遍历所有数据，只添加文件夹
-                res.data.forEach(node => {
-                    if (node.file_type === 1) {
-                        const option = document.createElement('option');
-                        option.value = node.file_id;
-                        option.text = `📁 ${node.file_name} (ID:${node.file_id})`;
-                        select.appendChild(option);
-                    }
-                });
-
-            } catch (error) {
-                console.error(error);
-                alert('加载出错，请确保后端已重启');
-                closeMoveModal();
-            }
-        }
-
-        function closeMoveModal() {
-            // 添加 hidden 类，强制隐藏
-            document.getElementById('move-modal').classList.add('hidden');
-            fileToMoveId = null;
-        }
-
-        async function confirmMove() {
-            const select = document.getElementById('move-folder-select');
-            const targetId = parseInt(select.value);
-
-            if (!fileToMoveId) return;
-            
-            const res = await api('/api/files/move', { file_id: fileToMoveId, target_parent_id: targetId });
-            alert(res.msg);
-            
-            // 无论成功失败，都关闭弹窗
-            closeMoveModal();
-            
-            if (res.code === 0) {
-                loadFiles();
-            }
-        }
-
-        // ---------------------------------------------------------
-        // 多文件上传逻辑
-        // ---------------------------------------------------------
-        function handleFileSelect(event) {
-            const files = Array.from(event.target.files);
-            const tbody = document.getElementById('upload-tbody');
-            
-            // 统计结果
-            let addedCount = 0;
-            let skippedCount = 0;
-            let skippedFiles = [];
-            
-            files.forEach(file => {
-                // 先创建真正的任务对象，而不是临时对象
-                // 这样确保 ID 是唯一的，且后续所有操作都使用同一个 ID
-                const task = new UploadTask(file, () => {
-                    loadFiles();
-                    // 任务完成后从 Map 中移除（延迟5秒）
-                    setTimeout(() => {
-                        activeTasks.delete(task.fileSafeId);
-                    }, 5000);
-                }, (errTask) => {
-                    console.error('任务失败:', errTask.file.name);
+                // 监听登录状态变化自动加载
+                onMounted(() => {
+                    if (isLoggedIn.value) loadFiles();
                 });
                 
-                const fileSafeId = task.fileSafeId; // 使用同一个 ID
-                
-                // 检查是否有正在上传的同文件
-                const existingTask = activeTasks.get(fileSafeId);
-                if (existingTask && existingTask.status !== 'FINISHED') {
-                    skippedCount++;
-                    skippedFiles.push(file.name);
-                    console.log(`跳过正在上传的文件: ${file.name}`);
-                    return; 
-                }
-
-                // 如果之前有已完成的任务，先清理
-                if (existingTask && existingTask.status === 'FINISHED') {
-                    activeTasks.delete(fileSafeId);
-                }
-
-                const tr = document.createElement('tr');
-                tr.id = `task-${fileSafeId}`; // 使用同一个 ID 设置 DOM
-                
-                const stats = uploadQueue.getStats();
-                const queueInfo = stats.waiting > 0 ? ` (队列:${stats.waiting})` : '';
-                
-                tr.innerHTML = `
-                    <td>${file.name}</td>
-                    <td>${(file.size/1024/1024).toFixed(1)} MB</td>
-                    <td>
-                        <div class="progress-container">
-                            <div class="progress-bar" style="width: 0%">0%</div>
-                        </div>
-                    </td>
-                    <td class="status-text">等待中${queueInfo}</td>
-                    <td><button class="btn-action">等待</button></td>
-                `;
-                tbody.appendChild(tr);
-
-                // 将任务存入 Map
-                activeTasks.set(fileSafeId, task);
-                
-                // 将任务加入队列（队列会自动触发 start）
-                uploadQueue.add(task);
-                addedCount++;
-            });
-            
-            // 无论是否有文件被跳过，都清空文件选择框
-            event.target.value = '';
-            
-            // 给用户反馈
-            if (skippedCount > 0) {
-                console.log(`已添加 ${addedCount} 个文件，跳过 ${skippedCount} 个正在上传的文件`);
+                return {
+                    isLoggedIn, loginForm, loginRules, loginLoading, loginMsg,
+                    currentParentId, pathStack, fileList, newFolderName, mkdirLoading, usedQuota, totalQuota,
+                    activeTaskList, moveDialogVisible, targetParentId, moveLoading, allFolders,
+                    formatSize, getFileIcon, navigateTo, goRoot, enterFolder, handleRowDoubleClick,
+                    createFolder, renameFile, deleteFile, downloadFile, previewFile, openMoveModal, confirmMove,
+                    handleFileSelect, pauseTask, resumeTask, retryTask,
+                    doLogin, doRegister, logout
+                };
             }
-        }
-
-
-        // ---------------------------------------------------------
-        // 定期清理已完成的任务
-        // ---------------------------------------------------------
-        setInterval(() => {
-            // 清理超过1小时未活动的已完成任务
-            const now = Date.now();
-            const timeout = 60 * 60 * 1000; // 1小时
-            
-            activeTasks.forEach((task, key) => {
-                if (task.status === 'FINISHED') {
-                    // 检查存储的时间戳
-                    const savedData = localStorage.getItem(`upload_task_${key}`);
-                    if (savedData) {
-                        const data = JSON.parse(savedData);
-                        if (now - data.timestamp > timeout) {
-                            activeTasks.delete(key);
-                            localStorage.removeItem(`upload_task_${key}`);
-                        }
-                    }
-                }
-            });
-            
-            // 打印队列状态
-            const stats = uploadQueue.getStats();
-            if (stats.total > 0) {
-                console.log(`上传队列状态: 运行中=${stats.running}, 等待中=${stats.waiting}, 活跃任务=${activeTasks.size}`);
-            }
-        }, 10000); // 每10秒检查一次
+        }).use(ElementPlus).mount('#app');
     </script>
 </body>
 </html>
