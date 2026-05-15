@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>私人云盘</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
+    <link rel="stylesheet" href="css/main.css" />
+</head>
+<body>
+    <div id="app"></div>
+
+    <!-- 依赖库（全局变量） -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/element-plus"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/spark-md5/3.0.2/spark-md5.min.js"></script>
+
+    <!-- 工具和 API -->
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+
+    <!-- 组件（按依赖顺序加载） -->
+    <script src="js/components/ContextMenu.js"></script>
+    <script src="js/components/FileDetailDrawer.js"></script>
+    <script src="js/components/ShareDialog.js"></script>
+    <script src="js/components/RecycleBin.js"></script>
+    <script src="js/components/UploadManager.js"></script>
+    <script src="js/components/FileList.js"></script>
+    <script src="js/components/Sidebar.js"></script>
+    <script src="js/components/TopBar.js"></script>
+    <script src="js/components/AppLayout.js"></script>
+
+    <!-- 入口 -->
+    <script src="js/main.js"></script>
+</body>
+</html>

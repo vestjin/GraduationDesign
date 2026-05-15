@@ -1,0 +1,98 @@
+:root {
+    --bg-color: #f5f7fb;
+    --card-bg: #ffffff;
+    --text-primary: #303133;
+    --text-secondary: #606266;
+    --border-color: #ebeef5;
+    --sidebar-bg: #ffffff;
+    --hover-bg: #f0f2f5;
+}
+
+body.dark {
+    --bg-color: #1e1e2f;
+    --card-bg: #2a2a3c;
+    --text-primary: #e5e9f0;
+    --text-secondary: #a0a0b0;
+    --border-color: #3a3a4e;
+    --sidebar-bg: #252537;
+    --hover-bg: #343546;
+}
+
+body {
+    margin: 0;
+    font-family: 'Segoe UI', Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-primary);
+    transition: background-color 0.3s, color 0.3s;
+}
+
+.app-layout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.sidebar {
+    width: 260px;
+    background-color: var(--sidebar-bg);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    padding: 20px;
+}
+
+.top-bar {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    border-radius: 8px;
+}
+
+.file-list-container {
+    flex: 1;
+    overflow: auto;
+    margin-top: 20px;
+}
+
+.context-menu {
+    position: fixed;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    z-index: 2000;
+    min-width: 160px;
+}
+
+.context-menu ul {
+    margin: 0;
+    padding: 8px 0;
+    list-style: none;
+}
+
+.context-menu li {
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.context-menu li:hover {
+    background-color: var(--hover-bg);
+}
+
+.drag-over {
+    border: 2px dashed #409eff;
+    background-color: rgba(64, 158, 255, 0.1);
+}
